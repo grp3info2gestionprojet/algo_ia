@@ -25,12 +25,19 @@ class Environnement(gym.Env):
         self.last_cond = 0
         self.is_not = 0
         self.code = []
-    
+
+        # Il faut modifier le vecteur obs en lui ajoutant les états finaux et les indicateurs de type (=, <, >).
+        # C'est un total de 8 elm à ajouter (attendre que l'équipe de traduction fini)
         obs = np.array([*self.scenarios[0], 0, 0, 0, 0], dtype=np.int32)
         return obs, {}
     
 
     def step(self, action):
+        if isinstance(action, np.ndarray):
+            action = action.item()
+        else:
+            action = int(action)
+
         self.code.append(action)
     
         terminated = False

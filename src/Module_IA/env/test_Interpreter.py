@@ -8,7 +8,7 @@ class Testing():
     def test(self):
         print("Starting testing add function\n")
         plateau_init = [0, 0, 1, 1]
-        code_ids = [15,9,1,3,16,6,16,17]
+        code_ids = [8, 0, 16, 17]
         plateau, lignes_executees = self.Interpret.executer(code_ids, plateau_init)
 
         print("Algoritme crée:")

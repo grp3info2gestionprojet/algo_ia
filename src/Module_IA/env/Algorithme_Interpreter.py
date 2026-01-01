@@ -81,6 +81,8 @@ class AlgorithmeInterpreter:
                 return -100
             
             #Comparer avec les sorties attendu.
+            #if self.verifier_succes(res_plateau,_,_):
+            #    reussites += 1
             
             total_lignes = max(total_lignes, info)
 
@@ -89,6 +91,22 @@ class AlgorithmeInterpreter:
             reward += 50 
             
         return reward
+    
+
+    def verifier_succes(self, plateau_final, cible_valeurs, cible_types):
+        for i in range(4):
+            val_reelle = plateau_final[i]
+            val_cible = cible_valeurs[i]
+            type_cible = cible_types[i]
+
+            if type_cible == 0:
+                if not (val_reelle == val_cible): return False
+            elif type_cible == 1:
+                if not (val_reelle >= val_cible): return False
+            elif type_cible == 2:
+                if not (val_reelle <= val_cible): return False
+        
+        return True
     
 
     def print_algo(self, code_ids):
