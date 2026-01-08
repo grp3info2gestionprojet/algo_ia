@@ -1,0 +1,16 @@
+{
+  "problem": "token_board_reach_target",
+  "init": {
+    "bleue": 0,
+    "jaune": 0,
+    "rouge": 0,
+    "verte": 0
+  },
+  "target": {
+    "bleue": 2,
+    "jaune": 0,
+    "rouge": 1,
+    "verte": 1
+  },
+  "max_steps": 10
+}
