@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Jetons RL</title>
+  <style>
+    :root { --bg:#0b1020; --card:#0f172a; --muted:#94a3b8; --line:#1f2937; --txt:#e5e7eb; --accent:#22c55e; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--txt); }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 18px; }
+    .top { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    h1 { margin:0; font-size: 18px; font-weight:700; letter-spacing: .2px; }
+    .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    button {
+      border: 1px solid var(--line); background: #111827; color: var(--txt);
+      border-radius: 12px; padding: 10px 14px; cursor: pointer; font-weight: 600;
+    }
+    button.primary { background: #16a34a; border-color: #16a34a; color:#07130b; }
+    button:active { transform: translateY(1px); }
+    .grid { display:grid; grid-template-columns: 1.2fr 1fr; gap:14px; margin-top: 14px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow:hidden; }
+    .card .hd { padding: 12px 14px; border-bottom: 1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .card .hd .title { font-size: 13px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+    .pill { font-size: 12px; color: #0b1020; background: var(--accent); padding: 4px 10px; border-radius: 999px; font-weight: 700; }
+    .pill.bad { background: #fb7185; }
+    textarea {
+      width: 100%; min-height: 520px; resize: vertical;
+      background: #0b1226; color: var(--txt);
+      border: 0; outline: none; padding: 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px;
+    }
+    pre {
+      margin:0; padding: 14px; background:#0b1226; color: var(--txt);
+      white-space: pre; overflow:auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px; min-height: 220px;
+    }
+    .stack { display:grid; grid-template-rows: auto auto; gap:14px; }
+    .tablewrap { overflow:auto; max-height: 280px; background:#0b1226; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { border-bottom: 1px solid #111827; padding: 10px 10px; text-align:center; }
+    th { position: sticky; top: 0; background:#0b1226; color: var(--muted); font-weight: 700; }
+    td:first-child, th:first-child { text-align:left; padding-left: 14px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .sub { color: var(--muted); font-size: 12px; }
+    @media (max-width: 980px){
+      .grid { grid-template-columns: 1fr; }
+      textarea { min-height: 360px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <h1>Jetons</h1>
+      <div class="actions">
+        <span class="pill" id="status">PRÊT</span>
+        <button class="primary" id="btnGen">Générer</button>
+        <button id="btnCopyPseudo">Copier pseudo-code</button>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="hd">
+          <div class="title">JSON</div>
+          <div class="sub mono" id="picked">—</div>
+        </div>
+        <textarea id="jsonInput"></textarea>
+      </div>
+
+      <div class="stack">
+        <div class="card">
+          <div class="hd">
+            <div class="title">Pseudo-code</div>
+            <div class="sub mono" id="meta">—</div>
+          </div>
+          <pre id="pseudoOut">(vide)</pre>
+        </div>
+
+        <div class="card">
+          <div class="hd">
+            <div class="title">Itération</div>
+            <div class="sub mono" id="iterMeta">step0 → step1</div>
+          </div>
+          <div class="tablewrap">
+            <table id="iterTable"></table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+const example = {
+  "init": {"r":1,"v":0,"b":3,"j":5},
+  "max_steps": 10,
+  "goal_condition": "b==0",
+  "rules": {
+    "vars": ["r","v","b","j"],
+    "rules": [
+      {"name":"retirer bleue si possible","condition":"b>=1","updates":{"r":"r+1","v":"v+1","b":"b-1","j":"j-1"}},
+      {"name":"rien sinon","condition":"b<1","updates":{"r":"r","v":"v","b":"b","j":"j"}}
+    ]
+  }
+};
+
+async function postJson(url, obj) {
+  const res = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(obj)});
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+}
+
+function renderTable(rows, vars) {
+  const headers = ["step", ...vars];
+  let html = "<tr>" + headers.map(h => `<th>${h}</th>`).join("") + "</tr>";
+  for (const r of rows) {
+    html += "<tr>" +
+      `<td class="mono">step ${r.step ?? ""}</td>` +
+      vars.map(v => `<td class="mono">${(r[v] ?? "")}</td>`).join("") +
+      "</tr>";
+  }
+  $("iterTable").innerHTML = html;
+}
+
+function setStatus(ok) {
+  const s = $("status");
+  s.textContent = ok ? "OK" : "ERREUR";
+  s.classList.toggle("bad", !ok);
+}
+
+$("btnGen").onclick = async () => {
+  $("meta").textContent = "…";
+  let obj;
+  try { obj = JSON.parse($("jsonInput").value); setStatus(true); }
+  catch(e){ setStatus(false); $("meta").textContent = "JSON invalide"; $("pseudoOut").textContent = String(e); return; }
+
+  try {
+    const data = await postJson("/api/one_iteration", obj);
+    $("pseudoOut").textContent = data.pseudocode || "(vide)";
+    const vars = obj?.rules?.vars || [];
+    renderTable(data.table || [], vars);
+    $("picked").textContent = data.rule ? ("règle: " + data.rule) : "—";
+    $("meta").textContent = "OK";
+  } catch(e) {
+    setStatus(false);
+    $("meta").textContent = "Erreur API";
+    $("pseudoOut").textContent = String(e);
+  }
+};
+
+$("btnCopyPseudo").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($("pseudoOut").textContent || "");
+    $("meta").textContent = "copié";
+    setTimeout(() => $("meta").textContent = "OK", 700);
+  } catch(e) {
+    $("meta").textContent = "copie impossible";
+  }
+};
+
+$("jsonInput").value = JSON.stringify(example, null, 2);
+</script>
+</body>
+</html>
