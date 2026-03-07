@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}Session{% endblock %}
+{% block content %}
+<div class="section-head">
+  <div>
+    <h1>Code de session</h1>
+    <p class="muted">Exercice : <b>{{ exercise.title }}</b> · Code : <b>{{ exercise.session_code or 'non publié' }}</b></p>
+  </div>
+  <a class="secondary-btn" href="{{ url_for('teacher_dashboard') }}">Retour</a>
+</div>
+
+<div class="session-layout">
+  <aside class="left-list-panel">
+    <div class="list-box single-item">{{ exercise.title }}</div>
+  </aside>
+
+  <section class="stats-panel">
+    <div class="panel-title">Statistiques de l’exercice</div>
+    <div class="exercise-meta">
+      <p><b>Description :</b> {{ exercise.description }}</p>
+      <p><b>Goal :</b> {{ exercise.goal_condition }}</p>
+      <p><b>État initial :</b> b={{ exercise.init_b }}, j={{ exercise.init_j }}, r={{ exercise.init_r }}, v={{ exercise.init_v }}</p>
+    </div>
+    <table class="data-table">
+      <thead><tr><th>Date</th><th>Étudiant</th><th>Code généré</th><th>Feedback</th></tr></thead>
+      <tbody>
+      {% for s in submissions %}
+        <tr>
+          <td>{{ s.created_at }}</td>
+          <td>{{ s.username }}</td>
+          <td><pre class="mini-pre">{{ s.generated_code }}</pre></td>
+          <td><pre class="mini-pre">{{ s.feedback_json }}</pre></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="muted">Aucune soumission</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <aside class="students-panel">
+    <div class="students-box">
+      <div class="students-label">nombre d’étudiant :</div>
+      <div class="students-value">{{ submissions|length }}</div>
+    </div>
+  </aside>
+</div>
+{% endblock %}

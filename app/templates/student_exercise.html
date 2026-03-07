@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}Résolution{% endblock %}
+{% block content %}
+<div class="student-title-area">
+  <div class="student-ex-title">{{ exercise.title }}</div>
+  <div class="student-ex-desc">{{ exercise.description }}</div>
+</div>
+
+<div class="student-layout">
+  <aside class="blocks-panel">
+    <div class="panel-header">BLOC DE COMMANDES</div>
+    <div id="palette">
+      <div class="palette-block block-if" draggable="true" data-type="if_not_empty">si non est_vide( <span class="slot">couleur</span> ) alors</div>
+      <div class="palette-block block-close" draggable="true" data-type="finsi">finsi</div>
+      <div class="palette-block block-if" draggable="true" data-type="if_empty">si est_vide( <span class="slot">couleur</span> ) alors</div>
+      <div class="palette-block block-close" draggable="true" data-type="finsi">finsi</div>
+      <div class="palette-block block-action" draggable="true" data-type="poser">poser(→ <span class="slot">couleur</span> )</div>
+      <div class="palette-block block-action" draggable="true" data-type="retirer">retirer(→ <span class="slot">couleur</span> )</div>
+    </div>
+  </aside>
+
+  <section class="workspace-panel">
+    <div class="workspace-head">
+      <div class="workspace-label">Workspace</div>
+      <div class="workspace-actions">
+        <button class="secondary-btn" id="helpBtn">Demander de l’aide</button>
+      </div>
+    </div>
+    <div class="algo-root">Algo</div>
+    <div id="workspace" class="workspace-dropzone"></div>
+    <div class="algo-footer">finalgo</div>
+  </section>
+
+  <aside class="feedback-panel">
+    <div class="panel-header">Recommandation / Contre exemple</div>
+    <pre id="feedbackText" class="preview-area small">(vide)</pre>
+    <button class="primary-btn feedback-send" id="submitBtn">Envoyer</button>
+  </aside>
+</div>
+
+<script>
+window.STUDENT_EXERCISE = {
+  exerciseId: {{ exercise.id }},
+  init: {{ problem.init | tojson }},
+  title: {{ exercise.title | tojson }}
+};
+</script>
+<script src="{{ url_for('static', filename='js/student_workspace.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Plateforme RL{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Plateforme Apprentissage Algorithmique</div>
+    <nav>
+      {% if session.get('user_id') %}
+        <span class="user-badge">{{ session.get('username') }} · {{ session.get('role') }}</span>
+        {% if session.get('role') == 'teacher' %}
+          <a href="{{ url_for('teacher_dashboard') }}">Professeur</a>
+        {% else %}
+          <a href="{{ url_for('student_dashboard') }}">Étudiant</a>
+        {% endif %}
+        <a href="{{ url_for('logout') }}">Déconnexion</a>
+      {% endif %}
+    </nav>
+  </header>
+  <main class="page-wrap">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

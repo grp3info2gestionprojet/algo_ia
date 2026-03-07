@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Création d'exercice{% endblock %}
+{% block content %}
+<div class="teacher-create-layout">
+  <section class="create-main">
+    <h1 class="center-title">Création d’exercice</h1>
+    <div class="field-row wide">
+      <label>Nom de l’exercice :</label>
+      <input id="title" type="text" placeholder="Exercice 1">
+    </div>
+    <div class="field-row wide text-top">
+      <label>Description :</label>
+      <textarea id="description" rows="3" placeholder="Dans cet exercice..."></textarea>
+    </div>
+
+    <div class="init-box">
+      <h3>État initial</h3>
+      <div class="inline-grid four">
+        <label>Bleue <input id="init_b" type="number" value="4"></label>
+        <label>Jaune <input id="init_j" type="number" value="5"></label>
+        <label>Rouge <input id="init_r" type="number" value="1"></label>
+        <label>Verte <input id="init_v" type="number" value="1"></label>
+      </div>
+      <div class="inline-grid two mt8">
+        <label>Goal condition <input id="goal_condition" type="text" value="b==0"></label>
+        <label>Max steps <input id="max_steps" type="number" value="30"></label>
+      </div>
+    </div>
+
+    <div id="rulesContainer"></div>
+
+    <div class="teacher-actions center">
+      <button class="secondary-btn" id="addRuleBtn">Ajouter Règle</button>
+      <button class="primary-btn" id="previewBtn">Générer une réponse</button>
+    </div>
+  </section>
+
+  <aside class="preview-panel">
+    <div class="panel-title">Réponse générée par agent RL</div>
+    <pre id="previewText" class="preview-area">(vide)</pre>
+    <div class="teacher-actions bottom-actions">
+      <button class="secondary-btn danger" id="clearBtn">Supprimer</button>
+      <button class="primary-btn" id="publishBtn">Publier</button>
+    </div>
+  </aside>
+</div>
+
+<script>
+window.TEACHER_FORM_BOOTSTRAP = true;
+</script>
+<script src="{{ url_for('static', filename='js/teacher_form.js') }}"></script>
+{% endblock %}
