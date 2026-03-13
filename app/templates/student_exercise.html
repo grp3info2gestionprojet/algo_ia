@@ -10,12 +10,14 @@
   <aside class="blocks-panel">
     <div class="panel-header">BLOC DE COMMANDES</div>
     <div id="palette">
-      <div class="palette-block block-if" draggable="true" data-type="if_not_empty">si non est_vide( <span class="slot">couleur</span> ) alors</div>
-      <div class="palette-block block-close" draggable="true" data-type="finsi">finsi</div>
-      <div class="palette-block block-if" draggable="true" data-type="if_empty">si est_vide( <span class="slot">couleur</span> ) alors</div>
-      <div class="palette-block block-close" draggable="true" data-type="finsi">finsi</div>
-      <div class="palette-block block-action" draggable="true" data-type="poser">poser(→ <span class="slot">couleur</span> )</div>
-      <div class="palette-block block-action" draggable="true" data-type="retirer">retirer(→ <span class="slot">couleur</span> )</div>
+      <div class="palette-block block-if" draggable="true" data-type="if_not_empty">si non est_vide( <span
+          class="slot">couleur</span> ) alors</div>
+      <div class="palette-block block-if" draggable="true" data-type="if_empty">si est_vide( <span
+          class="slot">couleur</span> ) alors</div>
+      <div class="palette-block block-action" draggable="true" data-type="poser">poser(→ <span
+          class="slot">couleur</span> )</div>
+      <div class="palette-block block-action" draggable="true" data-type="retirer">retirer(→ <span
+          class="slot">couleur</span> )</div>
     </div>
   </aside>
 
@@ -26,8 +28,9 @@
         <button class="secondary-btn" id="helpBtn">Demander de l’aide</button>
       </div>
     </div>
-    <div class="algo-root">Algo</div>
-    <div id="workspace" class="workspace-dropzone"></div>
+    <div class="algo-root">Algo principal</div>
+    <div id="workspace" class="workspace-dropzone"
+      style="min-height: 500px; border: 3px solid #111; border-radius: 20px; padding: 16px; background: #f8f8f8;"></div>
     <div class="algo-footer">finalgo</div>
   </section>
 
@@ -39,11 +42,11 @@
 </div>
 
 <script>
-window.STUDENT_EXERCISE = {
-  exerciseId: {{ exercise.id }},
-  init: {{ problem.init | tojson }},
-  title: {{ exercise.title | tojson }}
-};
+  window.STUDENT_EXERCISE = {
+    exerciseId: {{ exercise.id }},
+  init: { { problem.init | tojson } },
+  title: { { exercise.title | tojson } }
+  };
 </script>
-<script src="{{ url_for('static', filename='js/student_workspace.js') }}"></script>
+<script src="{{ url_for('static', filename='js/student_workspace.js') }}?v={{ range(1, 1000) | random }}"></script>
 {% endblock %}

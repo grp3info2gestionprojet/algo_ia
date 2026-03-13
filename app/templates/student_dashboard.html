@@ -8,17 +8,26 @@
   </div>
 </div>
 <table class="data-table">
-  <thead><tr><th>Titre</th><th>Description</th><th>Code session</th><th>Action</th></tr></thead>
+  <thead>
+    <tr>
+      <th>Titre</th>
+      <th>Description</th>
+      <th>Code session</th>
+      <th>Action</th>
+    </tr>
+  </thead>
   <tbody>
     {% for ex in exercises %}
-      <tr>
-        <td>{{ ex.title }}</td>
-        <td>{{ ex.description }}</td>
-        <td>{{ ex.session_code }}</td>
-        <td><a href="{{ url_for('student_exercise', exercise_id=ex.id) }}">Ouvrir</a></td>
-      </tr>
+    <tr>
+      <td>{{ ex.title }}</td>
+      <td>{{ ex.description }}</td>
+      <td>{{ ex.session_code }}</td>
+      <td><a href="{{ url_for('student_exercise', exercise_id=ex.id) }}">Ouvrir</a></td>
+    </tr>
     {% else %}
-      <tr><td colspan="4" class="muted">Aucun exercice publié</td></tr>
+    <tr>
+      <td colspan="4" class="muted">Aucun exercice publié</td>
+    </tr>
     {% endfor %}
   </tbody>
 </table>
