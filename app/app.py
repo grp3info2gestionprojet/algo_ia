@@ -1,8 +1,12 @@
 from __future__ import annotations
-import json, sqlite3, secrets
+import json, sqlite3, secrets, sys
 from functools import wraps
 from pathlib import Path
 from flask import Flask, g, render_template, request, redirect, url_for, session, jsonify, flash
+
+# Ajout du dossier src au path pour les imports
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src' / 'Recommendation'))
+from Recommandation import SystemeRecommandation, ALL_ACTIONS
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / 'platform.db'
@@ -128,6 +132,87 @@ def logout():
 # ---------------- Helpers ----------------
 COLOR_LABELS = {'b': 'Bleue', 'j': 'Jaune', 'r': 'Rouge', 'v': 'Verte'}
 VARS = ['b','j','r','v']
+
+# ---- Conversion blocs JS ↔ code_ids (AlgorithmeInterpreter) ----
+_COLOR_MAP  = {'b': 0, 'j': 1, 'r': 2, 'v': 3}
+_COLOR_NAMES = {0: 'bleue', 1: 'jaune', 2: 'rouge', 3: 'verte'}
+
+def blocks_to_code_ids(blocks):
+    """Convertit les blocs plats du frontend en liste de code_ids."""
+    code_ids = []
+    for b in blocks:
+        c = _COLOR_MAP.get(b.get('color'), 0)
+        t = b.get('type', '')
+        if t == 'poser':          code_ids.append(c)
+        elif t == 'retirer':      code_ids.append(c + 4)
+        elif t == 'if_empty':     code_ids.append(c + 8)
+        elif t == 'if_not_empty': code_ids.append(c + 12)
+        elif t == 'finsi':        code_ids.append(16)
+    code_ids.append(17)  # STOP
+    return code_ids
+
+def code_ids_to_pseudocode(code_ids):
+    """Convertit une liste de code_ids en pseudocode lisible numéroté."""
+    lines = []
+    depth = 0
+    line_no = 1
+    for action_id in code_ids:
+        action = ALL_ACTIONS.get(action_id, '')
+        if not action or action == 'STOP':
+            break
+        indent = '    ' * depth
+        if action == 'FIN_SI':
+            depth = max(0, depth - 1)
+            indent = '    ' * depth
+            lines.append(f"{line_no}: {indent}finsi"); line_no += 1
+        elif action.startswith('SI NON Est_vide('):
+            lines.append(f"{line_no}: {indent}si non est_vide({_COLOR_NAMES[action_id % 4]}) alors"); line_no += 1
+            depth += 1
+        elif action.startswith('SI Est_vide('):
+            lines.append(f"{line_no}: {indent}si est_vide({_COLOR_NAMES[action_id % 4]}) alors"); line_no += 1
+            depth += 1
+        elif action.startswith('Ajouter('):
+            lines.append(f"{line_no}: {indent}poser(→{_COLOR_NAMES[action_id % 4]})"); line_no += 1
+        elif action.startswith('Retirer('):
+            lines.append(f"{line_no}: {indent}retirer(→{_COLOR_NAMES[action_id % 4]})"); line_no += 1
+    return '\n'.join(lines) if lines else '(algorithme vide)'
+
+def recommandation_to_message(resultat):
+    """Traduit le dict de SystemeRecommandation.recommander() en HTML lisible."""
+    if resultat.get('code_correct'):
+        return '✅ Votre algorithme est correct ! Il produit exactement le même comportement que la solution de référence.'
+    rec = resultat.get('recommandation')
+    if rec is None:
+        return 'Aucune recommandation disponible pour le moment.'
+    taux_base  = resultat.get('taux_base', 0)
+    impasse    = resultat.get('impasse', False)
+    substituee = resultat.get('substituee', False)
+    originale  = resultat.get('recommandation_originale')
+    parties = []
+    pct = round(taux_base * 100, 1)
+    parties.append(f"Correspondance actuelle avec la solution : <b>{pct}%</b> "
+                   f"({rec['nb_corrects']}/{rec['nb_total']} cas corrects).")
+    if impasse:
+        parties.append("⚠️ <b>Impasse détectée</b> : aucun ajout n'améliore la situation. "
+                       "Il faut corriger ou supprimer une instruction existante.")
+    labels = {'AJOUTER': '➕ Ajouter', 'SUPPRIMER': '🗑️ Supprimer', 'REMPLACER': '🔄 Remplacer'}
+    label = labels.get(rec['type'], rec['type'])
+    if rec['type'] == 'AJOUTER':
+        parties.append(f"💡 <b>Recommandation :</b> {label} <code>{rec['action_nom']}</code>")
+    elif rec['type'] == 'SUPPRIMER':
+        parties.append(f"💡 <b>Recommandation :</b> {label} la ligne {rec['position']} "
+                       f"(<code>{rec['action_nom']}</code>)")
+    else:
+        parties.append(f"💡 <b>Recommandation :</b> {label} la ligne {rec['position']} : "
+                       f"<code>{rec['action_remplacee']}</code> → <code>{rec['action_nom']}</code>")
+    signe = '+' if rec['delta'] >= 0 else ''
+    parties.append(f"Après cette opération : <b>{round(rec['taux']*100,1)}%</b> de cas corrects "
+                   f"({signe}{round(rec['delta']*100,1)}%).")
+    if substituee and originale:
+        parties.append(f"⚠️ <i>Note : l'action optimale serait <code>{originale['action_nom']}</code>, "
+                       f"mais elle risque d'échouer si la case est vide. "
+                       f"Il est conseillé de la protéger avec un bloc conditionnel d'abord.</i>")
+    return '<br>'.join(parties)
 
 
 def color_name(code):
@@ -363,30 +448,87 @@ def student_help(exercise_id):
     ex, _ = get_exercise(exercise_id)
     if not ex:
         return jsonify({'ok': False, 'message': 'Exercice introuvable'}), 404
+
+    blocks = (request.get_json(force=True) or {}).get('blocks', [])
+    code_ids_etudiant = blocks_to_code_ids(blocks)
+
+    # Récupération du code correct stocké dans problem_json
     problem = json.loads(ex['problem_json'])
-    return jsonify({'ok': True, **generate_teacher_preview(problem)})
+    code_ids_correct = problem.get('code_ids_correct')
+    if not code_ids_correct:
+        # Fallback : ancienne aide basique si aucun code de référence n'est enregistré
+        return jsonify({'ok': True, **generate_teacher_preview(problem)})
+
+    try:
+        systeme = SystemeRecommandation()
+        oracle  = systeme.construire_oracle(code_ids_correct, nb_etats=50, max_valeur=5)
+
+        # Contre-exemple
+        contre_exemple_msg = systeme.generateur.tester_code(
+            code_ids_etudiant, oracle, formater_message=True
+        )
+
+        # Recommandation
+        resultat  = systeme.recommander(code_ids_etudiant, oracle, verbose=False)
+        message   = recommandation_to_message(resultat)
+        pseudocode = None if resultat.get('code_correct') else code_ids_to_pseudocode(code_ids_correct)
+
+        return jsonify({
+            'ok':             True,
+            'contre_exemple': contre_exemple_msg,
+            'message':        message,
+            'pseudocode':     pseudocode,
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'message': str(e)}), 500
 
 @app.post('/api/student/submit/<int:exercise_id>')
 @login_required('student')
 def student_submit(exercise_id):
-    data = request.get_json(force=True)
+    data   = request.get_json(force=True)
     blocks = data.get('blocks', [])
-    generated_code = blocks_to_code(blocks)
+    generated_code    = blocks_to_code(blocks)
+    code_ids_etudiant = blocks_to_code_ids(blocks)
+
     ex, _ = get_exercise(exercise_id)
     if not ex:
         return jsonify({'ok': False}), 404
+
     problem = json.loads(ex['problem_json'])
-    help_preview = generate_teacher_preview(problem)
+    code_ids_correct = problem.get('code_ids_correct')
+
+    contre_exemple_msg = None
+    expected_pseudocode = None
+
+    if code_ids_correct:
+        try:
+            systeme = SystemeRecommandation()
+            oracle  = systeme.construire_oracle(code_ids_correct, nb_etats=50, max_valeur=5)
+            contre_exemple_msg  = systeme.generateur.tester_code(
+                code_ids_etudiant, oracle, formater_message=True
+            )
+            resultat = systeme.recommander(code_ids_etudiant, oracle, verbose=False)
+            if not resultat.get('code_correct'):
+                expected_pseudocode = code_ids_to_pseudocode(code_ids_correct)
+        except Exception:
+            pass
+    else:
+        # Fallback si pas de code de référence
+        help_preview = generate_teacher_preview(problem)
+        expected_pseudocode = help_preview['pseudocode']
+
     feedback = {
-        'message': 'Soumission enregistrée. Comparaison basique disponible.',
-        'expected_hint': help_preview['message'],
-        'expected_pseudocode': help_preview['pseudocode'],
-        'student_code': generated_code
+        'student_code':        generated_code,
+        'contre_exemple':      contre_exemple_msg,
+        'expected_pseudocode': expected_pseudocode,
     }
+
     db = get_db()
-    db.execute('INSERT INTO submissions(exercise_id,student_id,blocks_json,generated_code,feedback_json) VALUES(?,?,?,?,?)', (
-        exercise_id, session['user_id'], json.dumps(blocks, ensure_ascii=False), generated_code, json.dumps(feedback, ensure_ascii=False)
-    ))
+    db.execute(
+        'INSERT INTO submissions(exercise_id,student_id,blocks_json,generated_code,feedback_json) VALUES(?,?,?,?,?)',
+        (exercise_id, session['user_id'], json.dumps(blocks, ensure_ascii=False),
+         generated_code, json.dumps(feedback, ensure_ascii=False))
+    )
     db.commit()
     return jsonify({'ok': True, 'feedback': feedback})
 

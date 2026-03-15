@@ -28,7 +28,6 @@ function renderTree(blockList, container) {
     blockDiv.style.fontFamily = 'monospace';
     blockDiv.style.fontSize = '16px';
 
-    // Scratch-like visual C-shape for if blocks
     if (block.type === 'if_not_empty' || block.type === 'if_empty') {
       blockDiv.innerHTML = `
         <div class="block-header" style="background: linear-gradient(180deg, var(--green), var(--green-dark)); padding: 10px 14px; border-radius: 12px 12px 0 0; color: white; display: flex; align-items: center; justify-content: space-between; font-weight: bold; box-shadow: inset 0 2px 0 rgba(255,255,255,0.2);">
@@ -42,7 +41,6 @@ function renderTree(blockList, container) {
       `;
       const childrenContainer = blockDiv.querySelector('.block-children');
 
-      // Make it a dropzone
       childrenContainer.addEventListener('dragover', e => {
         e.preventDefault();
         e.stopPropagation();
@@ -76,7 +74,6 @@ function renderTree(blockList, container) {
       `;
     }
 
-    // Bind color select
     const select = blockDiv.querySelector('.color-select');
     if (select) {
       select.addEventListener('change', e => {
@@ -84,7 +81,6 @@ function renderTree(blockList, container) {
       });
     }
 
-    // Bind delete button
     const delBtn = blockDiv.querySelector('.btn-del');
     if (delBtn) {
       delBtn.addEventListener('click', e => {
@@ -102,7 +98,6 @@ function renderBlocks() {
   renderTree(rootBlocks, workspace);
 }
 
-// Extract to the flat format the backend expects
 function extractFlatBlocks(blockList, indent = 0) {
   let flat = [];
   blockList.forEach(b => {
@@ -119,14 +114,14 @@ function extractFlatBlocks(blockList, indent = 0) {
   return flat;
 }
 
-// Draggable toolbox setup
+// ─── Draggable toolbox ────────────────────────────────────────────────────────
+
 palette.querySelectorAll('[draggable="true"]').forEach(el => {
   el.addEventListener('dragstart', e => {
     e.dataTransfer.setData('text/plain', el.dataset.type);
   });
 });
 
-// Root workspace dropzone
 workspace.addEventListener('dragover', e => {
   e.preventDefault();
   workspace.style.backgroundColor = '#eaeaea';
@@ -144,67 +139,105 @@ workspace.addEventListener('drop', e => {
   }
 });
 
-// Backend communication
-async function submitSolution() {
-  const blocks = extractFlatBlocks(rootBlocks);
-  const res = await fetch(`/api/student/submit/${window.STUDENT_EXERCISE.exerciseId}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ blocks })
-  });
-  const data = await res.json();
+// ─── Helpers affichage ────────────────────────────────────────────────────────
 
-  if (data.ok && data.feedback) {
-    feedbackText.innerHTML = `
-<b>Soumission enregistrée !</b><br><br>
-
-<b>Votre code généré :</b>
-<div style="background: #282a36; color: #f8f8f2; padding: 10px; border-radius: 8px; margin-top: 5px; font-family: monospace; white-space: pre-wrap; text-align: left;">${data.feedback.student_code}</div>
-<br>
-<b>Correction algorithmique attendue :</b>
-<div style="background: #282a36; color: #f8f8f2; padding: 10px; border-radius: 8px; margin-top: 5px; font-family: monospace; white-space: pre-wrap; text-align: left;">${data.feedback.expected_pseudocode}</div>
-    `;
-  } else {
-    feedbackText.textContent = JSON.stringify(data, null, 2);
-  }
+function codeBlock(content) {
+  return `<div style="background:#282a36;color:#f8f8f2;padding:10px;border-radius:8px;margin-top:5px;font-family:monospace;white-space:pre-wrap;text-align:left;">${content}</div>`;
 }
+
+function setLoading(msg) {
+  feedbackText.innerHTML = `<i style="color:#888;">${msg}</i>`;
+}
+
+function buildStudentPseudocode(blocks) {
+  let lines = [];
+  let lineNo = 1;
+  blocks.forEach(b => {
+    const indentStr = '    '.repeat(b.indent);
+    const colorName = { b: 'bleue', j: 'jaune', r: 'rouge', v: 'verte' }[b.color] || '';
+    let text = '';
+    if (b.type === 'if_not_empty') text = `si non est_vide(${colorName}) alors`;
+    else if (b.type === 'if_empty')  text = `si est_vide(${colorName}) alors`;
+    else if (b.type === 'poser')     text = `poser(→${colorName})`;
+    else if (b.type === 'retirer')   text = `retirer(→${colorName})`;
+    else if (b.type === 'finsi')     text = `finsi`;
+    if (text) { lines.push(`${lineNo}: ${indentStr}${text}`); lineNo++; }
+  });
+  return lines.join('\n') || '(algorithme vide)';
+}
+
+// ─── Demander de l'aide ───────────────────────────────────────────────────────
 
 document.getElementById('helpBtn').addEventListener('click', async () => {
   const blocks = extractFlatBlocks(rootBlocks);
-  const res = await fetch(`/api/student/help/${window.STUDENT_EXERCISE.exerciseId}`, { method: 'POST' });
-  const data = await res.json();
+  setLoading('Génération de la recommandation…');
 
-  // Create student's code locally
-  let lines = ['Algorithme algo_principal()'];
-  let lineNo = 1;
-  blocks.forEach(b => {
-    let indentStr = '    '.repeat(b.indent);
-    let colorName = b.color === 'b' ? 'bleue' : b.color === 'j' ? 'jaune' : b.color === 'r' ? 'rouge' : b.color === 'v' ? 'verte' : '';
-    let text = '';
-    if (b.type === 'if_not_empty') text = `si non est_vide(${colorName}) alors`;
-    else if (b.type === 'if_empty') text = `si est_vide(${colorName}) alors`;
-    else if (b.type === 'poser') text = `poser(→${colorName})`;
-    else if (b.type === 'retirer') text = `retirer(→${colorName})`;
-    else if (b.type === 'finsi') text = `finsi`;
-    if (text) { lines.push(`${lineNo}: ${indentStr}${text}`); lineNo++; }
-  });
-  const studentCode = lines.join('\\n');
+  try {
+    const res = await fetch(`/api/student/help/${window.STUDENT_EXERCISE.exerciseId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blocks })
+    });
+    const data = await res.json();
+    const studentCode = buildStudentPseudocode(blocks);
 
-  if (data.ok) {
-    feedbackText.innerHTML = `
-<b>Votre code actuel :</b>
-<div style="background: #282a36; color: #f8f8f2; padding: 10px; border-radius: 8px; margin-top: 5px; font-family: monospace; white-space: pre-wrap; text-align: left;">${studentCode}</div>
-<br>
-<b>Aide / Indice :</b><br>
-${data.message}<br><br>
+    if (data.ok) {
+      let html = `<b>Votre code actuel :</b>${codeBlock(studentCode)}<br>`;
 
-<b>Code recommandé pour la situation initiale :</b>
-<div style="background: #282a36; color: #f8f8f2; padding: 10px; border-radius: 8px; margin-top: 5px; font-family: monospace; white-space: pre-wrap; text-align: left;">${data.pseudocode}</div>
-    `;
-  } else {
-    feedbackText.textContent = JSON.stringify(data, null, 2);
+      if (data.contre_exemple) {
+        html += `<b>🔍 Contre-exemple :</b><br>
+<span style="color:#ff5555;font-family:monospace;">${data.contre_exemple}</span><br><br>`;
+      }
+
+      if (data.message) {
+        html += `<b>💡 Recommandation :</b><br>${data.message}`;
+      }
+
+      feedbackText.innerHTML = html;
+    } else {
+      feedbackText.innerHTML = `<span style="color:#ff5555;">Erreur : ${data.message || JSON.stringify(data)}</span>`;
+    }
+  } catch (err) {
+    feedbackText.innerHTML = `<span style="color:#ff5555;">Erreur réseau : ${err.message}</span>`;
   }
 });
+
+// ─── Envoyer la solution ──────────────────────────────────────────────────────
+
+async function submitSolution() {
+  const blocks = extractFlatBlocks(rootBlocks);
+  setLoading('Vérification de votre solution…');
+
+  try {
+    const res = await fetch(`/api/student/submit/${window.STUDENT_EXERCISE.exerciseId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blocks })
+    });
+    const data = await res.json();
+
+    if (data.ok && data.feedback) {
+      const fb = data.feedback;
+      let html = '';
+
+      if (fb.contre_exemple) {
+        // Code incorrect : afficher uniquement le contre-exemple
+        html += `<b>❌ Code incorrect</b><br><br>`;
+        html += `<b>🔍 Contre-exemple :</b><br>
+<span style="color:#ff5555;font-family:monospace;">${fb.contre_exemple}</span>`;
+      } else {
+        // Code correct
+        html += `<b>✅ Bravo, votre algorithme est correct !</b>`;
+      }
+
+      feedbackText.innerHTML = html;
+    } else {
+      feedbackText.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+    }
+  } catch (err) {
+    feedbackText.innerHTML = `<span style="color:#ff5555;">Erreur réseau : ${err.message}</span>`;
+  }
+}
 
 document.getElementById('submitBtn').addEventListener('click', submitSolution);
 
