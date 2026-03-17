@@ -3,9 +3,10 @@
 {% block content %}
 <div class="teacher-create-layout">
   <section class="create-main">
-    <h1 class="center-title">Création d’exercice</h1>
+    <h1 class="center-title">Création d'exercice</h1>
+
     <div class="field-row wide">
-      <label>Nom de l’exercice :</label>
+      <label>Nom de l'exercice :</label>
       <input id="title" type="text" placeholder="Exercice 1">
     </div>
     <div class="field-row wide text-top">
@@ -16,14 +17,14 @@
     <div class="init-box">
       <h3>État initial</h3>
       <div class="inline-grid four">
-        <label>Bleue <input id="init_b" type="number" value="4"></label>
-        <label>Jaune <input id="init_j" type="number" value="5"></label>
-        <label>Rouge <input id="init_r" type="number" value="1"></label>
-        <label>Verte <input id="init_v" type="number" value="1"></label>
+        <label>Bleue  <input id="init_b" type="number" value="4" min="0"></label>
+        <label>Jaune  <input id="init_j" type="number" value="5" min="0"></label>
+        <label>Rouge  <input id="init_r" type="number" value="1" min="0"></label>
+        <label>Verte  <input id="init_v" type="number" value="1" min="0"></label>
       </div>
       <div class="inline-grid two mt8">
-        <label>Goal condition <input id="goal_condition" type="text" value="b==0"></label>
-        <label>Max steps <input id="max_steps" type="number" value="30"></label>
+        <label>Condition objectif <input id="goal_condition" type="text" value="b==0"></label>
+        <label>Pas maximum       <input id="max_steps" type="number" value="30" min="1"></label>
       </div>
     </div>
 
@@ -31,19 +32,54 @@
 
     <div class="teacher-actions center">
       <button class="secondary-btn" id="addRuleBtn">Ajouter Règle</button>
-      <button class="primary-btn" id="previewBtn">Générer une réponse</button>
+      <button class="primary-btn"   id="previewBtn">Générer une réponse</button>
     </div>
   </section>
 
+  <!-- ── Panneau de prévisualisation ── -->
   <aside class="preview-panel">
-    <div class="panel-title">Réponse générée par agent RL</div>
+    <div class="panel-title">
+      Réponse générée
+      <span id="previewBadge" class="preview-badge" style="display:none"></span>
+    </div>
+
     <pre id="previewText" class="preview-area">(vide)</pre>
+
     <div class="teacher-actions bottom-actions">
       <button class="secondary-btn danger" id="clearBtn">Supprimer</button>
-      <button class="primary-btn" id="publishBtn">Publier</button>
+      <button class="primary-btn"          id="publishBtn">Publier</button>
     </div>
   </aside>
 </div>
+
+<style>
+/* ── États du panneau de prévisualisation ── */
+.preview-area {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  flex: 1;
+  margin: 0;
+  padding: 14px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  transition: opacity .2s;
+}
+.preview-area.loading { opacity: .5; }
+.preview-area.error   { color: #f87171; }
+
+.preview-badge {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.preview-badge.ok  { background: #22c55e; color: #07130b; }
+.preview-badge.err { background: #f87171; color: #fff; }
+</style>
 
 <script>
 window.TEACHER_FORM_BOOTSTRAP = true;

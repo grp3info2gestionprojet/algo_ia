@@ -138,21 +138,57 @@ function buildProblem(){
   };
 }
 
-async function preview(publish=false){
+// ─────────────────────────────────────────────────────────────
+// Affichage du résultat dans le panneau de prévisualisation
+// ─────────────────────────────────────────────────────────────
+
+function setPreviewLoading() {
+  const el = document.getElementById('previewText');
+  el.textContent = '⏳ Génération en cours…';
+  el.className = 'preview-area loading';
+}
+
+function setPreviewError(msg) {
+  const el = document.getElementById('previewText');
+  el.textContent = '❌ Erreur : ' + msg;
+  el.className = 'preview-area error';
+}
+
+function renderPreview(data) {
+  const el = document.getElementById('previewText');
+  el.className = 'preview-area';
+
+  if (!data || data.error) {
+    setPreviewError((data && data.error) || 'Réponse invalide du serveur');
+    return;
+  }
+
+  const pseudocode = (data.preview && data.preview.pseudocode) || '';
+  el.textContent = pseudocode || '(aucun pseudo-code généré)';
+}
+
+async function preview(publish = false) {
   const payload = {
-    title: document.getElementById('title').value || 'Exercice',
+    title:       document.getElementById('title').value || 'Exercice',
     description: document.getElementById('description').value || '',
-    problem: buildProblem(),
-    publish
+    problem:     buildProblem(),
+    publish,
   };
-  const endpoint = publish ? '/api/teacher/exercise/save' : '/api/teacher/exercise/preview';
+  const endpoint = publish
+    ? '/api/teacher/exercise/save'
+    : '/api/teacher/exercise/preview';
+
   const res = await fetch(endpoint, {
-    method: 'POST',
+    method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body:    JSON.stringify(payload),
   });
-  const data = await res.json();
-  return data;
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    return { error: err.error || `Erreur HTTP ${res.status}` };
+  }
+  return await res.json();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -167,20 +203,29 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('clearBtn').addEventListener('click', () => {
     document.getElementById('title').value = '';
     document.getElementById('description').value = '';
-    document.getElementById('previewText').textContent = '(vide)';
+    const el = document.getElementById('previewText');
+    el.textContent = '(vide)';
+    el.className = 'preview-area';
     rules = [createRule()];
     renderRules();
   });
 
   document.getElementById('previewBtn').addEventListener('click', async () => {
+    setPreviewLoading();
     const data = await preview(false);
-    document.getElementById('previewText').textContent = JSON.stringify(data.problem_json, null, 2) + '\n\n' + data.preview.message + '\n\n' + data.preview.pseudocode;
+    renderPreview(data);
   });
 
   document.getElementById('publishBtn').addEventListener('click', async () => {
+    setPreviewLoading();
     const data = await preview(true);
+    if (data.error) {
+      setPreviewError(data.error);
+      return;
+    }
     if (data.ok) {
-      alert(`Exercice publié. Code session: ${data.session_code || 'N/A'}`);
+      renderPreview(data);
+      alert(`✓ Exercice publié.\nCode session : ${data.session_code || 'N/A'}`);
       window.location.href = `/teacher/session/${data.exercise_id}`;
     }
   });

@@ -8,6 +8,16 @@ from flask import Flask, g, render_template, request, redirect, url_for, session
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src' / 'Recommendation'))
 from Recommandation import SystemeRecommandation, ALL_ACTIONS
 
+# ── Moteur IA (Module_IA) ──
+# Structure : algo_ia/src/Module_IA/engine/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src' / 'Module_IA'))
+try:
+    from engine.core import parse_problem as _parse_problem
+    from engine.pseudocode import generate_pseudocode as _generate_pseudocode
+    _ENGINE_AVAILABLE = True
+except ImportError:
+    _ENGINE_AVAILABLE = False
+
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / 'platform.db'
 
@@ -304,22 +314,33 @@ def simulate_rule(problem, idx):
 
 
 def generate_teacher_preview(problem):
-    # placeholder help: first applicable rule
+    """
+    Génère uniquement le pseudo-code de référence via le moteur Module_IA.
+    Repli sur une génération basique si le moteur n'est pas disponible.
+    """
+    if _ENGINE_AVAILABLE:
+        try:
+            prob = _parse_problem(problem)
+            pseudocode = _generate_pseudocode(prob)
+            return {'pseudocode': pseudocode}
+        except Exception as e:
+            return {'pseudocode': f'Erreur de génération : {e}'}
+
+    # ── Fallback sans moteur IA ──
     idx = None
     for i, r in enumerate(problem['rules']['rules']):
         if eval_condition(problem['init'], r['condition']):
             idx = i
             break
     if idx is None:
-        return {'message': 'Aucune règle applicable.', 'pseudocode': 'Algorithme algo_principal()\n1: // rien'}
-    sim = simulate_rule(problem, idx)
+        return {'pseudocode': 'Algorithme algo_principal()\n1: // aucune règle applicable'}
     code = ['Algorithme algo_principal()']
     line = 1
     rule = problem['rules']['rules'][idx]
     cond_var = rule['condition'][0]
     code.append(f"{line}: si (non est_vide({color_name(cond_var).lower()})) alors"); line += 1
     for v in VARS:
-        delta = parse_update_delta(rule['updates'].get(v,v), v)
+        delta = parse_update_delta(rule['updates'].get(v, v), v)
         if delta < 0:
             for _ in range(abs(delta)):
                 code.append(f"{line}:     retirer(→{color_name(v).lower()})"); line += 1
@@ -327,7 +348,7 @@ def generate_teacher_preview(problem):
             for _ in range(delta):
                 code.append(f"{line}:     poser(→{color_name(v).lower()})"); line += 1
     code.append(f"{line}: finsi")
-    return {'message': f"Règle recommandée: {rule['name']}", 'pseudocode': '\n'.join(code), 'simulation': sim}
+    return {'pseudocode': '\n'.join(code)}
 
 
 def blocks_to_code(blocks):
