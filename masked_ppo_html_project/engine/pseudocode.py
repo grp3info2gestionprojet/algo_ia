@@ -85,93 +85,116 @@ def _emit_guard_chain(dec_vars: List[str], inner_lines: List[str], base_indent: 
 
 def _k_trick_full(rule_deltas: Dict[str,int], xvar: str, k: int) -> List[str]:
     """
-    Génère un pseudo-code "k-trick" général (k>=2) pour exprimer x>=k avec seulement:
+    Génère un pseudo-code "k-trick" général (k>=1) pour exprimer x>=k avec seulement:
       - est_vide / non est_vide
       - retirer / poser
 
-    Idée:
-      1) On exécute *toutes* les mises à jour de la règle (retirer/poser) de manière sécurisée.
-      2) On vérifie ensuite si x avait au moins k jetons en tentant de retirer (k-2) jetons supplémentaires.
-         - Si on échoue (x devient vide trop tôt) => règle invalide => on annule toutes les mises à jour.
-         - Si on réussit => règle valide => on restaure les retraits de test (net: x diminue de 1).
+    Généralisation pour tout delta d négatif sur xvar (pas seulement -1) :
+    Soit d = rule_deltas[xvar] (ex: -2 pour b-2).
+
+    Stratégie en deux phases :
+    Phase 1 — vérification de x >= k via k retraits de test consécutifs :
+      On tente de retirer k jetons un par un depuis x.
+      - Si l'un des retraits échoue (x est vide) => condition fausse => on repose les jetons déjà retirés.
+      - Si tous réussissent => condition vraie.
+    Phase 2 — application des updates de la règle (si condition vraie) :
+      On a déjà retiré k jetons de x (test). L'update veut retirer |d| jetons de x au total.
+      - Si d == -k : les k retraits de test font exactement l'update => rien à faire de plus sur x.
+      - Si |d| < k  : on a trop retiré => reposer (k - |d|) jetons sur x.
+      - Si |d| > k  : on n'a pas assez retiré => retirer (|d| - k) jetons de plus sur x
+                      (sécurisé par des gardes non est_vide).
+      On applique ensuite les updates sur les autres variables (sécurisés par gardes).
     """
     X = _n(xvar)
-    if k < 2:
-        return []
+    dx = rule_deltas.get(xvar, 0)   # delta sur la variable de condition (négatif ou nul)
+    abs_dx = abs(dx) if dx < 0 else 0
 
-    # Ops de la règle
-    dec_ops, inc_ops = _emit_ops_for_deltas(rule_deltas)
-
-    # Gardes pour sécuriser les retraits initiaux (sans dupliquer le test sur x, déjà fait en externe)
-    dec_guard_vars: List[str] = []
-    for v in sorted(rule_deltas.keys()):
-        d = rule_deltas[v]
-        if d < 0:
-            dec_guard_vars += [v] * (-d)
-    if xvar in dec_guard_vars:
-        dec_guard_vars.remove(xvar)
-
-    # lignes d'annulation (undo) des updates hors x
-    undo_lines: List[str] = []
+    # lignes d'annulation (undo) des updates hors x (pour le cas condition fausse)
+    undo_x_lines: List[str] = []  # annulation de x si on avait avancé
+    undo_other_lines: List[str] = []
     for v in sorted(rule_deltas.keys()):
         if v == xvar:
             continue
         d = rule_deltas[v]
         if d > 0:
             for _ in range(d):
-                undo_lines.append(f"retirer(→{_n(v)})")
+                undo_other_lines.append(f"retirer(→{_n(v)})")
         elif d < 0:
             for _ in range(-d):
-                undo_lines.append(f"poser(→{_n(v)})")
+                undo_other_lines.append(f"poser(→{_n(v)})")
+
+    # ops sur les autres variables (updates hors x)
+    other_dec_ops: List[str] = []
+    other_inc_ops: List[str] = []
+    for v in sorted(rule_deltas.keys()):
+        if v == xvar:
+            continue
+        d = rule_deltas[v]
+        if d < 0:
+            for _ in range(-d):
+                other_dec_ops.append(f"retirer(→{_n(v)})")
+        elif d > 0:
+            for _ in range(d):
+                other_inc_ops.append(f"poser(→{_n(v)})")
 
     lines: List[str] = []
-    lines.append(f"si (non est_vide({X})) alors")
 
-    # 1) appliquer la règle (sécurisée)
-    applied = dec_ops + inc_ops
-    if dec_guard_vars:
-        lines.extend(_emit_guard_chain(dec_guard_vars, applied, base_indent=1))
-    else:
-        for op in applied:
-            lines.append("    " + op)
+    # ── Phase 1 : tenter de retirer k jetons de test depuis x ──────────────────
+    # On construit une chaîne imbriquée de k blocs si (non est_vide(X)) alors
+    # Après k retraits réussis :
+    #   - Appliquer les autres updates
+    #   - Ajuster x selon la différence entre k retraits de test et |d| souhaité
+    # En cas d'échec au i-ème retrait : reposer i jetons déjà retirés
 
-    extra = k - 2  # nb de retraits de test
+    def build_test_chain(depth: int, indent: int) -> None:
+        """
+        depth = nombre de retraits de test déjà effectués avec succès.
+        On tente d'en effectuer un de plus si depth < k.
+        """
+        if depth == k:
+            # Tous les k retraits de test ont réussi => condition x >= k vérifiée
+            # Appliquer les updates sur les autres variables (retraits sécurisés)
+            other_vars_dec = [v for v in sorted(rule_deltas.keys())
+                              if v != xvar and rule_deltas[v] < 0]
+            dec_guard_vars: List[str] = []
+            for v in other_vars_dec:
+                dec_guard_vars += [v] * (-rule_deltas[v])
 
-    def emit_invalid(indent: int, removed_so_far: int):
-        # Restaurer x (1 retrait principal + removed_so_far retraits de test réussis)
-        for _ in range(1 + removed_so_far):
-            lines.append("    "*indent + f"poser(→{X})")
-        for u in undo_lines:
-            lines.append("    "*indent + u)
+            other_ops = other_dec_ops + other_inc_ops
+            if dec_guard_vars:
+                guarded = _emit_guard_chain(dec_guard_vars, other_ops, base_indent=indent)
+                lines.extend(guarded)
+            else:
+                for op in other_ops:
+                    lines.append("    "*indent + op)
 
-    def emit_valid(indent: int):
-        # Restaurer uniquement les retraits de test (extra)
-        for _ in range(extra):
-            lines.append("    "*indent + f"poser(→{X})")
-
-    # 2) Chaîne imbriquée de retraits de test
-    def rec(depth: int, removed: int, indent: int):
-        if depth == extra:
-            # après avoir retiré extra jetons (si extra==0, on vient directement ici)
-            lines.append("    "*indent + f"si (est_vide({X})) alors")
-            emit_invalid(indent+1, removed)
-            if extra > 0:
-                lines.append("    "*indent + "sinon")
-                emit_valid(indent+1)
-            lines.append("    "*indent + "finsi")
+            # Ajuster x : on a retiré k jetons de test, on veut un effet net de |d|
+            net_x = k - abs_dx   # positif => trop retiré => reposer ; négatif => pas assez => retirer
+            if net_x > 0:
+                # reposer net_x jetons
+                for _ in range(net_x):
+                    lines.append("    "*indent + f"poser(→{X})")
+            elif net_x < 0:
+                # retirer (-net_x) jetons de plus (sécurisé par gardes)
+                extra_removes = [xvar] * (-net_x)
+                extra_ops = [f"retirer(→{X})"] * (-net_x)
+                guarded = _emit_guard_chain(extra_removes, extra_ops, base_indent=indent)
+                lines.extend(guarded)
+            # si net_x == 0 : rien à faire, les k retraits de test suffisent
             return
 
-        # on tente de retirer un jeton supplémentaire
+        # Tenter le (depth+1)-ième retrait de test
         lines.append("    "*indent + f"si (non est_vide({X})) alors")
         lines.append("    "*(indent+1) + f"retirer(→{X})")
-        rec(depth+1, removed+1, indent+1)
+        build_test_chain(depth + 1, indent + 1)
         lines.append("    "*indent + "sinon")
-        emit_invalid(indent+1, removed)  # on n'a pas pu retirer le prochain jeton
+        # Échec : reposer les `depth` jetons déjà retirés
+        for _ in range(depth):
+            lines.append("    "*(indent+1) + f"poser(→{X})")
         lines.append("    "*indent + "finsi")
 
-    rec(0, 0, 1)
+    build_test_chain(0, 0)
 
-    lines.append("finsi")
     return lines
 
 def _simple_condition_to_if(cond: str) -> Optional[str]:
@@ -191,27 +214,14 @@ def pseudocode_for_rule(problem: Dict[str,Any], rule: Dict[str,Any], init_state:
     deltas = _updates_deltas(rule.get("updates",{}), vars_)
     ge = _parse_ge_k(rule.get("condition",""))
 
-    # Cas condition x>=k avec update x<-x-1
+    # Cas condition x>=k avec update qui retire des jetons de x (delta négatif quelconque)
+    # Généralisation : tout delta négatif sur xvar (pas seulement -1)
+    # On utilise toujours le k-trick pour traduire x>=k en est_vide/non est_vide
     if ge:
         xvar, k = ge
-        if deltas.get(xvar) == -1 and k >= 2:
-            x0 = int(init_state.get(xvar,0))
-            if x0 == 0:
-                return []  # aucune action générée
-            if x0 < k:
-                return _k_trick_full(deltas, xvar, k)
-            # x0>=k: on peut générer un pseudo-code simple (règle valide)
-            # => appliquer la règle avec des gardes sur les retraits
-            dec_guard_vars: List[str] = []
-            for v in sorted(deltas.keys()):
-                d = deltas[v]
-                if d < 0:
-                    dec_guard_vars += [v] * (-d)
-            dec_ops, inc_ops = _emit_ops_for_deltas(deltas)
-            inner = dec_ops + inc_ops
-            if dec_guard_vars:
-                return _emit_guard_chain(dec_guard_vars, inner, base_indent=0)
-            return inner
+        dx = deltas.get(xvar, 0)
+        if dx < 0 and k >= 1:
+            return _k_trick_full(deltas, xvar, k)
 
     # Autres conditions simples : convertir si possible
     if_line = _simple_condition_to_if(rule.get("condition",""))
