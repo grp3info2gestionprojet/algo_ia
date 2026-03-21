@@ -157,6 +157,7 @@ def blocks_to_code_ids(blocks):
         elif t == 'retirer':      code_ids.append(c + 4)
         elif t == 'if_empty':     code_ids.append(c + 8)
         elif t == 'if_not_empty': code_ids.append(c + 12)
+        elif t == 'sinon':        code_ids.append(18)   # SINON n'a pas de couleur
         elif t == 'finsi':        code_ids.append(16)
     code_ids.append(17)  # STOP
     return code_ids
@@ -175,6 +176,11 @@ def code_ids_to_pseudocode(code_ids):
             depth = max(0, depth - 1)
             indent = '    ' * depth
             lines.append(f"{line_no}: {indent}finsi"); line_no += 1
+        elif action == 'SINON':
+            depth = max(0, depth - 1)
+            indent = '    ' * depth
+            lines.append(f"{line_no}: {indent}sinon"); line_no += 1
+            depth += 1
         elif action.startswith('SI NON Est_vide('):
             lines.append(f"{line_no}: {indent}si non est_vide({_COLOR_NAMES[action_id % 4]}) alors"); line_no += 1
             depth += 1
@@ -313,18 +319,79 @@ def simulate_rule(problem, idx):
     }
 
 
+def pseudocode_to_code_ids(pseudocode: str) -> list:
+    """
+    Convertit le pseudo-code textuel produit par Module_IA en liste de code_ids
+    compatibles avec AlgorithmeInterpreter / SystemeRecommandation.
+
+    Mapping :
+      poser(→bleue/jaune/rouge/verte)        →  0– 3
+      retirer(→bleue/jaune/rouge/verte)      →  4– 7
+      si (est_vide(couleur)) alors           →  8–11
+      si (non est_vide(couleur)) alors       → 12–15
+      finsi                                  → 16
+      STOP ajouté automatiquement            → 17
+    Les lignes non reconnues sont ignorées.
+    """
+    COLOR_IDX = {'bleue': 0, 'jaune': 1, 'rouge': 2, 'verte': 3}
+    code_ids = []
+
+    for raw_line in pseudocode.splitlines():
+        # Retirer le numéro de ligne éventuel ("12: …")
+        line = raw_line.strip()
+        if ':' in line:
+            line = line.split(':', 1)[1].strip()
+        lc = line.lower().replace(' ', '')
+
+        if not lc or lc.startswith('algorithme') or lc.startswith('//'):
+            continue
+
+        if lc in ('finsi', 'fin_si'):
+            code_ids.append(16)
+            continue
+
+        matched = False
+        for color, idx in COLOR_IDX.items():
+            if f'poser(→{color})' in lc or f'poser(->{color})' in lc:
+                code_ids.append(idx)        # 0–3
+                matched = True; break
+        if matched: continue
+
+        for color, idx in COLOR_IDX.items():
+            if f'retirer(→{color})' in lc or f'retirer(->{color})' in lc:
+                code_ids.append(idx + 4)    # 4–7
+                matched = True; break
+        if matched: continue
+
+        for color, idx in COLOR_IDX.items():
+            if f'nonest_vide({color})' in lc or (f'est_vide({color})' in lc and 'non' in lc):
+                code_ids.append(idx + 12)   # 12–15
+                matched = True; break
+        if matched: continue
+
+        for color, idx in COLOR_IDX.items():
+            if f'est_vide({color})' in lc and 'non' not in lc:
+                code_ids.append(idx + 8)    # 8–11
+                break
+
+    code_ids.append(17)  # STOP
+    return code_ids
+
+
 def generate_teacher_preview(problem):
     """
-    Génère uniquement le pseudo-code de référence via le moteur Module_IA.
-    Repli sur une génération basique si le moteur n'est pas disponible.
+    Génère le pseudo-code de référence via le moteur Module_IA et le convertit
+    en code_ids pour le système de recommandation.
+    Retourne : { 'pseudocode': str, 'code_ids': list[int] }
     """
     if _ENGINE_AVAILABLE:
         try:
             prob = _parse_problem(problem)
             pseudocode = _generate_pseudocode(prob)
-            return {'pseudocode': pseudocode}
+            code_ids = pseudocode_to_code_ids(pseudocode)
+            return {'pseudocode': pseudocode, 'code_ids': code_ids}
         except Exception as e:
-            return {'pseudocode': f'Erreur de génération : {e}'}
+            return {'pseudocode': f'Erreur de génération : {e}', 'code_ids': [17]}
 
     # ── Fallback sans moteur IA ──
     idx = None
@@ -333,7 +400,7 @@ def generate_teacher_preview(problem):
             idx = i
             break
     if idx is None:
-        return {'pseudocode': 'Algorithme algo_principal()\n1: // aucune règle applicable'}
+        return {'pseudocode': 'Algorithme algo_principal()\n1: // aucune règle applicable', 'code_ids': [17]}
     code = ['Algorithme algo_principal()']
     line = 1
     rule = problem['rules']['rules'][idx]
@@ -348,7 +415,8 @@ def generate_teacher_preview(problem):
             for _ in range(delta):
                 code.append(f"{line}:     poser(→{color_name(v).lower()})"); line += 1
     code.append(f"{line}: finsi")
-    return {'pseudocode': '\n'.join(code)}
+    pseudocode = '\n'.join(code)
+    return {'pseudocode': pseudocode, 'code_ids': pseudocode_to_code_ids(pseudocode)}
 
 
 def blocks_to_code(blocks):
@@ -367,6 +435,8 @@ def blocks_to_code(blocks):
             lines.append(f"{line_no}: {indent}retirer(→{label})")
         elif kind == 'poser':
             lines.append(f"{line_no}: {indent}poser(→{label})")
+        elif kind == 'sinon':
+            lines.append(f"{line_no}: {indent}sinon")
         elif kind == 'finsi':
             lines.append(f"{line_no}: {indent}finsi")
         line_no += 1
@@ -402,6 +472,13 @@ def teacher_save_exercise():
     description = data.get('description','')
     publish = bool(data.get('publish', False))
     db = get_db()
+
+    # Génération du pseudo-code et des code_ids de référence,
+    # stockés dans problem_json pour le système de recommandation
+    preview = generate_teacher_preview(payload)
+    payload['pseudocode_reference'] = preview['pseudocode']
+    payload['code_ids_correct']     = preview['code_ids']
+
     cur = db.execute('''
         INSERT INTO exercises(title,description,init_b,init_j,init_r,init_v,goal_condition,max_steps,problem_json,is_published,session_code,created_by)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)

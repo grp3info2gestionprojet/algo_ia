@@ -163,6 +163,8 @@ function renderPreview(data) {
     return;
   }
 
+  // data.preview.pseudocode contient le pseudo-code textuel
+  // data.preview.code_ids est stocké côté serveur dans problem_json, pas affiché ici
   const pseudocode = (data.preview && data.preview.pseudocode) || '';
   el.textContent = pseudocode || '(aucun pseudo-code généré)';
 }
