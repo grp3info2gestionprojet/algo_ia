@@ -13,8 +13,8 @@ function colorSelect(selected = 'b') {
 }
 
 function typeLabel(type) {
-  if (type === 'if_not_empty') return 'si non est_vide';
-  if (type === 'if_empty') return 'si est_vide';
+  if (type === 'if_not_empty' || type === 'if_not_empty_else') return 'si non est_vide';
+  if (type === 'if_empty' || type === 'if_empty_else') return 'si est_vide';
   if (type === 'retirer') return 'retirer';
   if (type === 'poser') return 'poser';
   return '';
@@ -28,17 +28,32 @@ function renderTree(blockList, container) {
     blockDiv.style.fontFamily = 'monospace';
     blockDiv.style.fontSize = '16px';
 
-    if (block.type === 'if_not_empty' || block.type === 'if_empty') {
-      blockDiv.innerHTML = `
+    if (block.type.startsWith('if_')) {
+      const isElse = block.type.endsWith('_else');
+      let html = `
         <div class="block-header" style="background: linear-gradient(180deg, var(--green), var(--green-dark)); padding: 10px 14px; border-radius: 12px 12px 0 0; color: white; display: flex; align-items: center; justify-content: space-between; font-weight: bold; box-shadow: inset 0 2px 0 rgba(255,255,255,0.2);">
           <div>${typeLabel(block.type)}(${colorSelect(block.color)}) alors</div>
           <button class="tiny-btn btn-del" data-idx="${index}" style="margin-left: 10px; color: black;">✕</button>
         </div>
         <div class="block-children" style="border-left: 16px solid var(--green-dark); padding: 10px 10px 10px 20px; min-height: 40px; background: rgba(0,0,0,0.02);"></div>
+      `;
+
+      if (isElse) {
+        html += `
+        <div class="block-header block-else-header" style="background: linear-gradient(180deg, var(--green), var(--green-dark)); padding: 8px 14px; color: white; display: flex; align-items: center; font-weight: bold; border-top: 1px solid rgba(255,255,255,0.3);">
+          <div>sinon</div>
+        </div>
+        <div class="block-children-else" style="border-left: 16px solid var(--green-dark); padding: 10px 10px 10px 20px; min-height: 40px; background: rgba(0,0,0,0.02);"></div>
+        `;
+      }
+
+      html += `
         <div class="block-footer" style="background: linear-gradient(180deg, var(--green), var(--green-dark)); padding: 8px 14px; border-radius: 0 0 12px 12px; color: white; font-weight: bold;">
           finsi
         </div>
       `;
+      blockDiv.innerHTML = html;
+
       const childrenContainer = blockDiv.querySelector('.block-children');
 
       childrenContainer.addEventListener('dragover', e => {
@@ -63,6 +78,33 @@ function renderTree(blockList, container) {
 
       if (block.children) {
         renderTree(block.children, childrenContainer);
+      }
+
+      if (isElse) {
+        const childrenElseContainer = blockDiv.querySelector('.block-children-else');
+        childrenElseContainer.addEventListener('dragover', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          childrenElseContainer.style.backgroundColor = 'rgba(0,0,0,0.08)';
+        });
+        childrenElseContainer.addEventListener('dragleave', e => {
+          childrenElseContainer.style.backgroundColor = 'rgba(0,0,0,0.02)';
+        });
+        childrenElseContainer.addEventListener('drop', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          childrenElseContainer.style.backgroundColor = 'rgba(0,0,0,0.02)';
+          const type = e.dataTransfer.getData('text/plain');
+          if (type) {
+            block.childrenElse = block.childrenElse || [];
+            block.childrenElse.push({ type, color: 'b', children: [] });
+            renderBlocks();
+          }
+        });
+
+        if (block.childrenElse) {
+          renderTree(block.childrenElse, childrenElseContainer);
+        }
       }
 
     } else {
@@ -101,10 +143,16 @@ function renderBlocks() {
 function extractFlatBlocks(blockList, indent = 0) {
   let flat = [];
   blockList.forEach(b => {
-    if (b.type === 'if_not_empty' || b.type === 'if_empty') {
+    if (b.type.startsWith('if_')) {
       flat.push({ type: b.type, color: b.color, indent: indent });
       if (b.children) {
         flat = flat.concat(extractFlatBlocks(b.children, indent + 1));
+      }
+      if (b.type.endsWith('_else')) {
+        flat.push({ type: 'sinon', color: null, indent: indent });
+        if (b.childrenElse) {
+          flat = flat.concat(extractFlatBlocks(b.childrenElse, indent + 1));
+        }
       }
       flat.push({ type: 'finsi', color: null, indent: indent });
     } else {
@@ -156,8 +204,9 @@ function buildStudentPseudocode(blocks) {
     const indentStr = '    '.repeat(b.indent);
     const colorName = { b: 'bleue', j: 'jaune', r: 'rouge', v: 'verte' }[b.color] || '';
     let text = '';
-    if (b.type === 'if_not_empty') text = `si non est_vide(${colorName}) alors`;
-    else if (b.type === 'if_empty')  text = `si est_vide(${colorName}) alors`;
+    if (b.type === 'if_not_empty' || b.type === 'if_not_empty_else') text = `si non est_vide(${colorName}) alors`;
+    else if (b.type === 'if_empty' || b.type === 'if_empty_else')  text = `si est_vide(${colorName}) alors`;
+    else if (b.type === 'sinon')     text = `sinon`;
     else if (b.type === 'poser')     text = `poser(→${colorName})`;
     else if (b.type === 'retirer')   text = `retirer(→${colorName})`;
     else if (b.type === 'finsi')     text = `finsi`;
