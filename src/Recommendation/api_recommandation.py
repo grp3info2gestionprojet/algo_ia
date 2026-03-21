@@ -30,12 +30,12 @@ def blocks_to_code_ids(blocks):
             code_ids.append(c)
         elif t == 'retirer':
             code_ids.append(c + 4)
-        elif t == 'if_empty':
+        elif t in ('if_empty', 'if_empty_else'):
             code_ids.append(c + 8)
-        elif t == 'if_not_empty':
+        elif t in ('if_not_empty', 'if_not_empty_else'):
             code_ids.append(c + 12)
         elif t == 'sinon':
-            code_ids.append(18)   # SINON n'a pas de couleur associée
+            code_ids.append(18)
         elif t == 'finsi':
             code_ids.append(16)
     code_ids.append(17)  # STOP
@@ -105,54 +105,23 @@ def recommandation_to_message(resultat):
     en un message lisible pour l'élève (affiché dans feedbackText).
     """
     if resultat.get("code_correct"):
-        return "✅ Votre algorithme est correct ! Il produit exactement le même comportement que la solution de référence."
+        return "✅ Votre algorithme est correct !"
 
     rec = resultat.get("recommandation")
     if rec is None:
         return "Aucune recommandation disponible pour le moment."
 
-    taux_base = resultat.get("taux_base", 0)
-    impasse   = resultat.get("impasse", False)
-    substituee = resultat.get("substituee", False)
-    originale  = resultat.get("recommandation_originale")
-
-    parties = []
-
-    # Taux de correspondance actuel
-    pct = round(taux_base * 100, 1)
-    parties.append(f"Correspondance actuelle avec la solution : <b>{pct}%</b> "
-                   f"({rec['nb_corrects']}/{rec['nb_total']} cas corrects).")
-
-    # Avertissement impasse
-    if impasse:
-        parties.append("⚠️ <b>Impasse détectée</b> : aucun ajout n'améliore la situation. "
-                       "Il faut corriger ou supprimer une instruction existante.")
-
-    # Recommandation principale
     type_labels = {"AJOUTER": "➕ Ajouter", "SUPPRIMER": "🗑️ Supprimer", "REMPLACER": "🔄 Remplacer"}
     label = type_labels.get(rec["type"], rec["type"])
 
     if rec["type"] == "AJOUTER":
-        parties.append(f"💡 <b>Recommandation :</b> {label} <code>{rec['action_nom']}</code>")
+        return f"💡 <b>Prochaine action :</b> {label} <code>{rec['action_nom']}</code>"
     elif rec["type"] == "SUPPRIMER":
-        parties.append(f"💡 <b>Recommandation :</b> {label} la ligne {rec['position']} "
-                       f"(<code>{rec['action_nom']}</code>)")
+        return (f"💡 <b>Prochaine action :</b> {label} la ligne {rec['position']} "
+                f"(<code>{rec['action_nom']}</code>)")
     else:
-        parties.append(f"💡 <b>Recommandation :</b> {label} la ligne {rec['position']} : "
-                       f"<code>{rec['action_remplacee']}</code> → <code>{rec['action_nom']}</code>")
-
-    delta_pct = round(rec["delta"] * 100, 1)
-    signe = "+" if delta_pct >= 0 else ""
-    parties.append(f"Après cette opération : <b>{round(rec['taux']*100,1)}%</b> de cas corrects "
-                   f"({signe}{delta_pct}%).")
-
-    # Note substitution règle de sécurité
-    if substituee and originale:
-        parties.append(f"⚠️ <i>Note : l'action optimale serait <code>{originale['action_nom']}</code>, "
-                       f"mais elle risque d'échouer si la case est vide. "
-                       f"Il est recommandé de la protéger avec un bloc conditionnel d'abord.</i>")
-
-    return "<br>".join(parties)
+        return (f"💡 <b>Prochaine action :</b> {label} la ligne {rec['position']} : "
+                f"<code>{rec['action_remplacee']}</code> → <code>{rec['action_nom']}</code>")
 
 
 # ---------------------------------------------------------------------------
