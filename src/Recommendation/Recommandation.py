@@ -15,6 +15,7 @@ ALL_ACTIONS = {
     **{i+12: f"SI NON Est_vide({COULEURS[i]})" for i in range(4)},
     16: "FIN_SI",
     17: "STOP",
+    18: "SINON",
 }
 
 # Seuil en dessous duquel on considère qu'on est en situation d'impasse
@@ -38,6 +39,48 @@ def profondeur_si(code_ids):
     return depth
 
 
+def sinon_possible(code_ids):
+    """
+    Retourne True si un SINON est syntaxiquement légal en fin de `code_ids`.
+    Conditions : au moins un SI ouvert ET le SI courant (le plus récent) n'a
+    pas encore de SINON.
+    Chaque entrée de la pile vaut True si un SINON a déjà été rencontré pour
+    ce niveau.
+    """
+    stack = []  # pile de booléens : a_sinon pour chaque SI ouvert
+    for aid in code_ids:
+        action = ALL_ACTIONS.get(aid, "")
+        if action.startswith("SI "):
+            stack.append(False)          # nouveau SI, pas encore de SINON
+        elif action == "SINON":
+            if stack:
+                stack[-1] = True         # marque le SINON pour le SI courant
+        elif action == "FIN_SI":
+            if stack:
+                stack.pop()
+    # SINON légal ssi la pile est non vide et le SI courant n'a pas encore de SINON
+    return bool(stack) and not stack[-1]
+
+
+def sinon_actif(code_ids):
+    """
+    Retourne True si on se trouve actuellement dans la branche SINON du SI
+    le plus récent (utile pour les heuristiques de contexte).
+    """
+    stack = []
+    for aid in code_ids:
+        action = ALL_ACTIONS.get(aid, "")
+        if action.startswith("SI "):
+            stack.append(False)
+        elif action == "SINON":
+            if stack:
+                stack[-1] = True
+        elif action == "FIN_SI":
+            if stack:
+                stack.pop()
+    return bool(stack) and stack[-1]
+
+
 def fermeture_minimale(code_ids):
     """Suffixe minimal pour fermer les SI ouverts et terminer avec STOP."""
     depth = profondeur_si(code_ids)
@@ -47,11 +90,14 @@ def fermeture_minimale(code_ids):
 def instructions_valides_apres(code_ids):
     """Instructions syntaxiquement légales à ajouter en fin de code."""
     depth = profondeur_si(code_ids)
+    peut_sinon = sinon_possible(code_ids)
     valides = []
     for aid, action in ALL_ACTIONS.items():
         if action == "FIN_SI" and depth == 0:
             continue
         if action == "STOP" and depth != 0:
+            continue
+        if action == "SINON" and not peut_sinon:
             continue
         valides.append(aid)
     return valides
@@ -60,7 +106,8 @@ def instructions_valides_apres(code_ids):
 def code_valide_apres_suppression(code_ids, position):
     """
     Vérifie que supprimer l'instruction à `position` donne un code
-    structurellement cohérent (pas de FIN_SI orphelin, profondeur >= 0).
+    structurellement cohérent (pas de FIN_SI orphelin, pas de SINON orphelin,
+    profondeur >= 0).
     Retourne le code résultant ou None si invalide.
     """
     if position < 0 or position >= len(code_ids):
@@ -68,16 +115,21 @@ def code_valide_apres_suppression(code_ids, position):
 
     code_sans = code_ids[:position] + code_ids[position + 1:]
 
-    # Vérification : la profondeur ne doit jamais devenir négative
-    depth = 0
+    # Vérification : la profondeur ne doit jamais devenir négative,
+    # et SINON/FIN_SI doivent rester cohérents.
+    stack = []  # pile de booléens : a_sinon pour chaque SI ouvert
     for aid in code_sans:
         action = ALL_ACTIONS.get(aid, "")
         if action.startswith("SI "):
-            depth += 1
+            stack.append(False)
+        elif action == "SINON":
+            if not stack or stack[-1]:
+                return None  # SINON sans SI ouvert, ou double SINON
+            stack[-1] = True
         elif action == "FIN_SI":
-            depth -= 1
-            if depth < 0:
+            if not stack:
                 return None  # FIN_SI sans SI correspondant
+            stack.pop()
 
     return code_sans
 
@@ -91,6 +143,7 @@ def instructions_valides_en_position(code_ids, position):
     code_apres = code_ids[position + 1:]  # on ignore l'instruction actuelle
 
     depth_avant = profondeur_si(code_avant)
+    peut_sinon_avant = sinon_possible(code_avant)
 
     valides = []
     for aid, action in ALL_ACTIONS.items():
@@ -99,24 +152,45 @@ def instructions_valides_en_position(code_ids, position):
             continue  # pas de SI ouvert avant cette position
         if action == "STOP" and depth_avant != 0:
             continue  # des SI sont encore ouverts
+        if action == "SINON" and not peut_sinon_avant:
+            continue  # SINON non légal ici
 
-        # Vérifier que le code_apres reste cohérent après ce remplacement
+        # Calculer la profondeur et l'état pile après cette instruction
+        if action.startswith("SI "):
+            depth_apres_inst = depth_avant + 1
+            stack_apres = [False]  # nouveau SI sans SINON
+        elif action == "FIN_SI":
+            depth_apres_inst = depth_avant - 1
+            stack_apres = []
+        elif action == "SINON":
+            depth_apres_inst = depth_avant
+            stack_apres = [True]   # SINON posé
+        else:
+            depth_apres_inst = depth_avant
+            stack_apres = []
+
+        # Vérifier que la profondeur ne devient jamais négative dans la suite,
+        # et que les SINON restent cohérents.
+        # On reconstruit la pile à partir de stack_apres (état courant du niveau)
+        # en rejouant code_apres.
+        depth_check = depth_apres_inst
         code_test = code_avant + [aid] + code_apres
-        depth = depth_avant + (1 if action.startswith("SI ") else
-                                -1 if action == "FIN_SI" else 0)
-
-        # Vérifier que la profondeur ne devient jamais négative dans la suite
-        depth_check = depth
         valide_suite = True
-        for a in code_apres:
+        stack_check = []
+        for a in code_test:
             act = ALL_ACTIONS.get(a, "")
             if act.startswith("SI "):
-                depth_check += 1
-            elif act == "FIN_SI":
-                depth_check -= 1
-                if depth_check < 0:
+                stack_check.append(False)
+            elif act == "SINON":
+                if not stack_check or stack_check[-1]:
                     valide_suite = False
                     break
+                stack_check[-1] = True
+            elif act == "FIN_SI":
+                if not stack_check:
+                    valide_suite = False
+                    break
+                stack_check.pop()
 
         if valide_suite:
             valides.append(aid)
@@ -126,17 +200,20 @@ def instructions_valides_en_position(code_ids, position):
 
 def couleur_si_actif(code_ids):
     """Retourne la couleur du SI le plus récent encore ouvert, ou None."""
-    si_stack = []
+    si_stack = []  # liste de (couleur, a_sinon)
     for aid in code_ids:
         action = ALL_ACTIONS.get(aid, "")
         if action.startswith("SI "):
             for c in COULEURS:
                 if f"({c})" in action:
-                    si_stack.append(c)
+                    si_stack.append((c, False))
                     break
+        elif action == "SINON" and si_stack:
+            couleur, _ = si_stack[-1]
+            si_stack[-1] = (couleur, True)
         elif action == "FIN_SI" and si_stack:
             si_stack.pop()
-    return si_stack[-1] if si_stack else None
+    return si_stack[-1][0] if si_stack else None
 
 
 # ---------------------------------------------------------------------------
@@ -146,21 +223,26 @@ def couleur_si_actif(code_ids):
 def couleur_non_est_vide_actif(code_ids):
     """
     Retourne l'ensemble des couleurs X pour lesquelles un bloc
-    'SI NON Est_vide(X)' est actuellement ouvert (empilé mais pas encore fermé).
+    'SI NON Est_vide(X)' est actuellement ouvert ET on est dans la branche SI
+    (pas dans la branche SINON, où la case peut être vide).
     """
-    si_stack = []
+    si_stack = []  # liste de (couleur_ou_None, a_sinon)
     for aid in code_ids:
         action = ALL_ACTIONS.get(aid, "")
         if action.startswith("SI NON Est_vide("):
             for c in COULEURS:
                 if f"({c})" in action:
-                    si_stack.append(c)
+                    si_stack.append((c, False))
                     break
         elif action.startswith("SI Est_vide("):
-            si_stack.append(None)  # SI d'une autre nature : on empile None
+            si_stack.append((None, False))  # SI d'une autre nature
+        elif action == "SINON" and si_stack:
+            couleur, _ = si_stack[-1]
+            si_stack[-1] = (couleur, True)
         elif action == "FIN_SI" and si_stack:
             si_stack.pop()
-    return set(c for c in si_stack if c is not None)
+    # La protection est active uniquement si on est dans la branche SI (pas SINON)
+    return set(c for c, a_sinon in si_stack if c is not None and not a_sinon)
 
 
 def appliquer_regle_securite_retirer(meilleure_action_id, code_partiel):
@@ -465,7 +547,6 @@ class SystemeRecommandation:
         if meilleure["type"] == "AJOUTER":
             id_si = appliquer_regle_securite_retirer(meilleure["action_id"], code_partiel)
             if id_si is not None:
-                # On substitue par SI NON Est_vide(X)
                 originale = meilleure
                 substituee = True
                 couleur = ALL_ACTIONS[id_si].replace("SI NON Est_vide(", "").rstrip(")")
@@ -474,7 +555,7 @@ class SystemeRecommandation:
                     "action_id": id_si,
                     "action_nom": ALL_ACTIONS[id_si],
                     "position": len(code_partiel),
-                    "score": meilleure["score"],  # hérite du score de Retirer(X)
+                    "score": meilleure["score"], 
                     "taux": meilleure["taux"],
                     "delta": meilleure["delta"],
                     "nb_corrects": meilleure["nb_corrects"],
@@ -505,9 +586,11 @@ class SystemeRecommandation:
                 action = ALL_ACTIONS.get(aid, "?")
                 if action == "FIN_SI":
                     depth = max(0, depth - 1)
+                elif action == "SINON":
+                    depth = max(0, depth - 1)
                 indent = "  " * depth
                 print(f"    [{i}] {indent}{action}")
-                if action.startswith("SI "):
+                if action.startswith("SI ") or action == "SINON":
                     depth += 1
         else:
             print("    (vide)")
@@ -571,9 +654,6 @@ class SystemeRecommandation:
         print()
         return resultat
 
-    # ------------------------------------------------------------------
-    # Méthodes privées
-    # ------------------------------------------------------------------
 
     def _afficher_tableau(self, candidats, taux_base, impasse):
         titre = "IMPASSE — ajouts + suppressions + remplacements" if impasse else "AJOUTS"
@@ -599,4 +679,3 @@ class SystemeRecommandation:
     def _barre_progression(taux, largeur=10):
         n = round(taux * largeur)
         return "[" + "█" * n + "░" * (largeur - n) + "]"
-

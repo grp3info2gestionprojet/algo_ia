@@ -18,6 +18,7 @@ def blocks_to_code_ids(blocks):
       retirer       → 4-7   (Retirer)
       if_empty      → 8-11  (SI Est_vide)
       if_not_empty  → 12-15 (SI NON Est_vide)
+      sinon         → 18    (SINON)
       finsi         → 16
     Le STOP (17) est ajouté automatiquement en fin de liste.
     """
@@ -33,6 +34,8 @@ def blocks_to_code_ids(blocks):
             code_ids.append(c + 8)
         elif t == 'if_not_empty':
             code_ids.append(c + 12)
+        elif t == 'sinon':
+            code_ids.append(18)   # SINON n'a pas de couleur associée
         elif t == 'finsi':
             code_ids.append(16)
     code_ids.append(17)  # STOP
@@ -63,6 +66,13 @@ def code_ids_to_pseudocode(code_ids):
             indent = '    ' * depth
             lines.append(f"{line_no}: {indent}finsi")
             line_no += 1
+
+        elif action == 'SINON':
+            depth = max(0, depth - 1)
+            indent = '    ' * depth
+            lines.append(f"{line_no}: {indent}sinon")
+            line_no += 1
+            depth += 1
 
         elif action.startswith('SI NON Est_vide('):
             c = COLOR_NAMES[action_id % 4]
