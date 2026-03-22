@@ -86,7 +86,7 @@ def code_ids_to_pseudocode(code_ids):
             line_no += 1
             depth += 1
 
-        elif action.startswith('Ajouter('):
+        elif action.startswith('Poser('):
             c = COLOR_NAMES[action_id % 4]
             lines.append(f"{line_no}: {indent}poser(→{c})")
             line_no += 1
@@ -97,6 +97,20 @@ def code_ids_to_pseudocode(code_ids):
             line_no += 1
 
     return '\n'.join(lines) if lines else '(algorithme vide)'
+
+
+def tronquer_code_partiel(code_ids):
+    """
+    Retire le STOP final et tous les FIN_SI qui le précèdent immédiatement,
+    afin que le système de recommandation reçoive uniquement les instructions
+    réellement saisies par l'étudiant, sans la fermeture automatique.
+    """
+    ids = list(code_ids)
+    if ids and ids[-1] == 17:
+        ids.pop()
+    while ids and ids[-1] == 16:
+        ids.pop()
+    return ids
 
 
 def recommandation_to_message(resultat):
@@ -153,13 +167,14 @@ def analyser_code_etudiant(blocks, code_ids_correct, nb_etats=50, max_valeur=5):
     systeme = SystemeRecommandation()
     oracle  = systeme.construire_oracle(code_ids_correct, nb_etats=nb_etats, max_valeur=max_valeur)
 
-    # Contre-exemple via GenerateurContreExemples
+    # Contre-exemple (code complet avec STOP)
     contre_exemple_msg = systeme.generateur.tester_code(
         code_ids_etudiant, oracle, formater_message=True
     )
 
-    # Recommandation via le système principal
-    resultat = systeme.recommander(code_ids_etudiant, oracle, verbose=False)
+    # Recommandation (code partiel sans STOP ni FIN_SI de fermeture)
+    code_partiel = tronquer_code_partiel(code_ids_etudiant)
+    resultat = systeme.recommander(code_partiel, oracle, verbose=False)
     message  = recommandation_to_message(resultat)
 
     # Pseudocode de référence (seulement si le code est incorrect)

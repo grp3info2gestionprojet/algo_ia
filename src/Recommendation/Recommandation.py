@@ -9,7 +9,7 @@ COULEURS = ['B', 'J', 'R', 'V']
 NOM_COULEURS = {'B': 'Bleu', 'J': 'Jaune', 'R': 'Rouge', 'V': 'Vert'}
 
 ALL_ACTIONS = {
-    **{i: f"Ajouter({COULEURS[i]})" for i in range(4)},
+    **{i: f"Poser({COULEURS[i]})" for i in range(4)},
     **{i+4: f"Retirer({COULEURS[i]})" for i in range(4)},
     **{i+8: f"SI Est_vide({COULEURS[i]})" for i in range(4)},
     **{i+12: f"SI NON Est_vide({COULEURS[i]})" for i in range(4)},
@@ -174,6 +174,8 @@ def instructions_valides_en_position(code_ids, position):
         # On reconstruit la pile à partir de stack_apres (état courant du niveau)
         # en rejouant code_apres.
         depth_check = depth_apres_inst
+        # stack simplifiée : on suit seulement la profondeur et si le sommet a un SINON
+        # Pour simplifier, on réutilise la vérification structurelle complète.
         code_test = code_avant + [aid] + code_apres
         valide_suite = True
         stack_check = []
@@ -547,6 +549,7 @@ class SystemeRecommandation:
         if meilleure["type"] == "AJOUTER":
             id_si = appliquer_regle_securite_retirer(meilleure["action_id"], code_partiel)
             if id_si is not None:
+                # On substitue par SI NON Est_vide(X)
                 originale = meilleure
                 substituee = True
                 couleur = ALL_ACTIONS[id_si].replace("SI NON Est_vide(", "").rstrip(")")
@@ -555,7 +558,7 @@ class SystemeRecommandation:
                     "action_id": id_si,
                     "action_nom": ALL_ACTIONS[id_si],
                     "position": len(code_partiel),
-                    "score": meilleure["score"], 
+                    "score": meilleure["score"],  # hérite du score de Retirer(X)
                     "taux": meilleure["taux"],
                     "delta": meilleure["delta"],
                     "nb_corrects": meilleure["nb_corrects"],
@@ -629,7 +632,7 @@ class SystemeRecommandation:
         )
 
         if rec["type"] == "AJOUTER":
-            print(f"     {type_label} Ajouter  [{rec['action_id']:2d}] {rec['action_nom']}")
+            print(f"     {type_label} Poser    [{rec['action_id']:2d}] {rec['action_nom']}")
         elif rec["type"] == "SUPPRIMER":
             print(f"     {type_label} Supprimer la ligne {rec['position']} "
                   f"[{rec['action_id']:2d}] {rec['action_nom']}")
@@ -654,6 +657,9 @@ class SystemeRecommandation:
         print()
         return resultat
 
+    # ------------------------------------------------------------------
+    # Méthodes privées
+    # ------------------------------------------------------------------
 
     def _afficher_tableau(self, candidats, taux_base, impasse):
         titre = "IMPASSE — ajouts + suppressions + remplacements" if impasse else "AJOUTS"

@@ -221,33 +221,42 @@ document.getElementById('helpBtn').addEventListener('click', async () => {
   const blocks = extractFlatBlocks(rootBlocks);
   setLoading('Génération de la recommandation…');
 
+  let data;
   try {
     const res = await fetch(`/api/student/help/${window.STUDENT_EXERCISE.exerciseId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ blocks })
     });
-    const data = await res.json();
-    const studentCode = buildStudentPseudocode(blocks);
-
-    if (data.ok) {
-      let html = `<b>Votre code actuel :</b>${codeBlock(studentCode)}<br>`;
-
-      if (data.contre_exemple) {
-        html += `<b>🔍 Contre-exemple :</b><br>
-<span style="color:#ff5555;font-family:monospace;">${data.contre_exemple}</span><br><br>`;
-      }
-
-      if (data.message) {
-        html += `<b>💡 Recommandation :</b><br>${data.message}`;
-      }
-
-      feedbackText.innerHTML = html;
-    } else {
-      feedbackText.innerHTML = `<span style="color:#ff5555;">Erreur : ${data.message || JSON.stringify(data)}</span>`;
+    const text = await res.text();
+    try {
+      data = JSON.parse(text);
+    } catch (_) {
+      feedbackText.innerHTML = `<span style="color:#ff5555;">Erreur serveur inattendue (réponse non-JSON).<br><pre style="font-size:11px;color:#aaa;">${text.slice(0, 500)}</pre></span>`;
+      return;
     }
   } catch (err) {
     feedbackText.innerHTML = `<span style="color:#ff5555;">Erreur réseau : ${err.message}</span>`;
+    return;
+  }
+
+  const studentCode = buildStudentPseudocode(blocks);
+
+  if (data.ok) {
+    let html = `<b>Votre code actuel :</b>${codeBlock(studentCode)}<br>`;
+
+    if (data.contre_exemple) {
+      html += `<b>🔍 Contre-exemple :</b><br>
+<span style="color:#ff5555;font-family:monospace;">${data.contre_exemple}</span><br><br>`;
+    }
+
+    if (data.message) {
+      html += `<b>💡 Recommandation :</b><br>${data.message}`;
+    }
+
+    feedbackText.innerHTML = html;
+  } else {
+    feedbackText.innerHTML = `<span style="color:#ff5555;">Erreur : ${data.message || JSON.stringify(data)}</span>`;
   }
 });
 
@@ -257,34 +266,56 @@ async function submitSolution() {
   const blocks = extractFlatBlocks(rootBlocks);
   setLoading('Vérification de votre solution…');
 
+  let data;
   try {
     const res = await fetch(`/api/student/submit/${window.STUDENT_EXERCISE.exerciseId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ blocks })
     });
-    const data = await res.json();
-
-    if (data.ok && data.feedback) {
-      const fb = data.feedback;
-      let html = '';
-
-      if (fb.contre_exemple) {
-        // Code incorrect : afficher uniquement le contre-exemple
-        html += `<b>❌ Code incorrect</b><br><br>`;
-        html += `<b>🔍 Contre-exemple :</b><br>
-<span style="color:#ff5555;font-family:monospace;">${fb.contre_exemple}</span>`;
-      } else {
-        // Code correct
-        html += `<b>✅ Bravo, votre algorithme est correct !</b>`;
-      }
-
-      feedbackText.innerHTML = html;
-    } else {
-      feedbackText.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+    const text = await res.text();
+    try {
+      data = JSON.parse(text);
+    } catch (_) {
+      feedbackText.innerHTML = `<span style="color:#ff5555;">Erreur serveur inattendue (réponse non-JSON).<br><pre style="font-size:11px;color:#aaa;">${text.slice(0, 500)}</pre></span>`;
+      return;
     }
   } catch (err) {
     feedbackText.innerHTML = `<span style="color:#ff5555;">Erreur réseau : ${err.message}</span>`;
+    return;
+  }
+
+  if (data.ok) {
+    if (data.is_correct) {
+      // Code correct : félicitations + bouton retour au dashboard
+      feedbackText.innerHTML = `
+        <div style="text-align:center; padding: 20px;">
+          <div style="font-size: 48px; margin-bottom: 10px;">🎉</div>
+          <b style="font-size: 20px; color: #50fa7b;">Bravo, votre algorithme est correct !</b>
+          <br><br>
+          <p style="color: #ccc;">L'exercice a été validé et envoyé à votre professeur.</p>
+          <br>
+          <a href="/student/dashboard"
+             style="display:inline-block; padding: 10px 24px; background: var(--green);
+                    color: white; border-radius: 8px; text-decoration: none;
+                    font-weight: bold; font-size: 15px;">
+            ← Retour aux exercices
+          </a>
+        </div>`;
+      document.getElementById('submitBtn').disabled = true;
+      document.getElementById('helpBtn').disabled = true;
+    } else {
+      // Code incorrect : afficher le contre-exemple
+      const fb = data.feedback;
+      let html = `<b>❌ Code incorrect</b><br><br>`;
+      if (fb.contre_exemple) {
+        html += `<b>🔍 Contre-exemple :</b><br>
+<span style="color:#ff5555;font-family:monospace;">${fb.contre_exemple}</span>`;
+      }
+      feedbackText.innerHTML = html;
+    }
+  } else {
+    feedbackText.innerHTML = `<span style="color:#ff5555;">Erreur : ${data.message || JSON.stringify(data)}</span>`;
   }
 }
 

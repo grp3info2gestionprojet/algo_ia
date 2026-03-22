@@ -83,6 +83,7 @@ def init_db():
         blocks_json TEXT NOT NULL,
         generated_code TEXT NOT NULL,
         feedback_json TEXT,
+        is_correct INTEGER NOT NULL DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (exercise_id) REFERENCES exercises(id),
         FOREIGN KEY (student_id) REFERENCES users(id)
@@ -94,6 +95,15 @@ def init_db():
         db.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)", ('teacher','teacher','teacher'))
         db.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)", ('student','student','student'))
         db.commit()
+    db.close()
+
+    # Migration : ajouter is_correct si la colonne n'existe pas encore
+    db = sqlite3.connect(DB_PATH)
+    try:
+        db.execute('ALTER TABLE submissions ADD COLUMN is_correct INTEGER NOT NULL DEFAULT 0')
+        db.commit()
+    except sqlite3.OperationalError:
+        pass  # colonne déjà présente
     db.close()
 
 init_db()
@@ -153,13 +163,33 @@ def blocks_to_code_ids(blocks):
     for b in blocks:
         c = _COLOR_MAP.get(b.get('color'), 0)
         t = b.get('type', '')
-        if t == 'poser':          code_ids.append(c)
-        elif t == 'retirer':      code_ids.append(c + 4)
-        elif t in ('if_empty', 'if_empty_else'):     code_ids.append(c + 8)
-        elif t in ('if_not_empty', 'if_not_empty_else'): code_ids.append(c + 12)
-        elif t == 'finsi':        code_ids.append(16)
+        if t == 'poser':                                  code_ids.append(c)
+        elif t == 'retirer':                              code_ids.append(c + 4)
+        elif t in ('if_empty', 'if_empty_else'):          code_ids.append(c + 8)
+        elif t in ('if_not_empty', 'if_not_empty_else'):  code_ids.append(c + 12)
+        elif t == 'sinon':                                code_ids.append(18)
+        elif t == 'finsi':                                code_ids.append(16)
     code_ids.append(17)  # STOP
     return code_ids
+
+def tronquer_code_partiel(code_ids):
+    """
+    Retire le STOP final et tous les FIN_SI qui le précèdent immédiatement,
+    afin que le système de recommandation reçoive uniquement les instructions
+    réellement saisies par l'étudiant, sans la fermeture automatique.
+
+    Exemple : [12, 0, 16, 17] → [12, 0]
+              [8, 0, 18, 4, 16, 17] → [8, 0, 18, 4]
+    """
+    ids = list(code_ids)
+    # Retirer le STOP final
+    if ids and ids[-1] == 17:
+        ids.pop()
+    # Retirer les FIN_SI qui terminent la séquence
+    while ids and ids[-1] == 16:
+        ids.pop()
+    return ids
+
 
 def code_ids_to_pseudocode(code_ids):
     """Convertit une liste de code_ids en pseudocode lisible numéroté."""
@@ -405,11 +435,11 @@ def blocks_to_code(blocks):
     for block in blocks:
         indent = '    ' * max(0, int(block.get('indent', 0)))
         kind = block.get('type')
-        color = block.get('color', 'b')
-        label = color_name(color).lower()
-        if kind == 'if_not_empty':
+        color = block.get('color') or 'b'
+        label = color_name(color).lower() if color else ''
+        if kind in ('if_not_empty', 'if_not_empty_else'):
             lines.append(f"{line_no}: {indent}si non est_vide({label}) alors")
-        elif kind == 'if_empty':
+        elif kind in ('if_empty', 'if_empty_else'):
             lines.append(f"{line_no}: {indent}si est_vide({label}) alors")
         elif kind == 'retirer':
             lines.append(f"{line_no}: {indent}retirer(→{label})")
@@ -509,7 +539,13 @@ def teacher_session(exercise_id):
 def student_dashboard():
     db = get_db()
     exercises = db.execute('SELECT * FROM exercises WHERE is_published=1 ORDER BY created_at DESC').fetchall()
-    return render_template('student_dashboard.html', exercises=exercises)
+    # Exercices validés par cet étudiant (au moins une soumission correcte)
+    rows = db.execute(
+        'SELECT DISTINCT exercise_id FROM submissions WHERE student_id=? AND is_correct=1',
+        (session['user_id'],)
+    ).fetchall()
+    validated_ids = {r['exercise_id'] for r in rows}
+    return render_template('student_dashboard.html', exercises=exercises, validated_ids=validated_ids)
 
 @app.route('/student/exercise/<int:exercise_id>')
 @login_required('student')
@@ -541,13 +577,14 @@ def student_help(exercise_id):
         systeme = SystemeRecommandation()
         oracle  = systeme.construire_oracle(code_ids_correct, nb_etats=50, max_valeur=5)
 
-        # Contre-exemple
+        # Contre-exemple (code complet avec STOP)
         contre_exemple_msg = systeme.generateur.tester_code(
             code_ids_etudiant, oracle, formater_message=True
         )
 
-        # Recommandation
-        resultat  = systeme.recommander(code_ids_etudiant, oracle, verbose=False)
+        # Recommandation (code partiel sans STOP ni FIN_SI de fermeture)
+        code_partiel = tronquer_code_partiel(code_ids_etudiant)
+        resultat  = systeme.recommander(code_partiel, oracle, verbose=False)
         message   = recommandation_to_message(resultat)
         pseudocode = None if resultat.get('code_correct') else code_ids_to_pseudocode(code_ids_correct)
 
@@ -563,52 +600,55 @@ def student_help(exercise_id):
 @app.post('/api/student/submit/<int:exercise_id>')
 @login_required('student')
 def student_submit(exercise_id):
-    data   = request.get_json(force=True)
-    blocks = data.get('blocks', [])
-    generated_code    = blocks_to_code(blocks)
-    code_ids_etudiant = blocks_to_code_ids(blocks)
+    try:
+        data   = request.get_json(force=True)
+        blocks = data.get('blocks', [])
+        generated_code    = blocks_to_code(blocks)
+        code_ids_etudiant = blocks_to_code_ids(blocks)
 
-    ex, _ = get_exercise(exercise_id)
-    if not ex:
-        return jsonify({'ok': False}), 404
+        ex, _ = get_exercise(exercise_id)
+        if not ex:
+            return jsonify({'ok': False, 'message': 'Exercice introuvable'}), 404
 
-    problem = json.loads(ex['problem_json'])
-    code_ids_correct = problem.get('code_ids_correct')
+        problem = json.loads(ex['problem_json'])
+        code_ids_correct = problem.get('code_ids_correct')
 
-    contre_exemple_msg = None
-    expected_pseudocode = None
+        contre_exemple_msg = None
+        expected_pseudocode = None
 
-    if code_ids_correct:
-        try:
+        if code_ids_correct:
             systeme = SystemeRecommandation()
             oracle  = systeme.construire_oracle(code_ids_correct, nb_etats=50, max_valeur=5)
-            contre_exemple_msg  = systeme.generateur.tester_code(
+            contre_exemple_msg = systeme.generateur.tester_code(
                 code_ids_etudiant, oracle, formater_message=True
             )
-            resultat = systeme.recommander(code_ids_etudiant, oracle, verbose=False)
+            code_partiel = tronquer_code_partiel(code_ids_etudiant)
+            resultat = systeme.recommander(code_partiel, oracle, verbose=False)
             if not resultat.get('code_correct'):
                 expected_pseudocode = code_ids_to_pseudocode(code_ids_correct)
-        except Exception:
-            pass
-    else:
-        # Fallback si pas de code de référence
-        help_preview = generate_teacher_preview(problem)
-        expected_pseudocode = help_preview['pseudocode']
+        else:
+            # Fallback si pas de code de référence
+            help_preview = generate_teacher_preview(problem)
+            expected_pseudocode = help_preview['pseudocode']
 
-    feedback = {
-        'student_code':        generated_code,
-        'contre_exemple':      contre_exemple_msg,
-        'expected_pseudocode': expected_pseudocode,
-    }
+        feedback = {
+            'student_code':        generated_code,
+            'contre_exemple':      contre_exemple_msg,
+            'expected_pseudocode': expected_pseudocode,
+        }
+        is_correct = 1 if contre_exemple_msg is None else 0
 
-    db = get_db()
-    db.execute(
-        'INSERT INTO submissions(exercise_id,student_id,blocks_json,generated_code,feedback_json) VALUES(?,?,?,?,?)',
-        (exercise_id, session['user_id'], json.dumps(blocks, ensure_ascii=False),
-         generated_code, json.dumps(feedback, ensure_ascii=False))
-    )
-    db.commit()
-    return jsonify({'ok': True, 'feedback': feedback})
+        db = get_db()
+        db.execute(
+            'INSERT INTO submissions(exercise_id,student_id,blocks_json,generated_code,feedback_json,is_correct) VALUES(?,?,?,?,?,?)',
+            (exercise_id, session['user_id'], json.dumps(blocks, ensure_ascii=False),
+             generated_code, json.dumps(feedback, ensure_ascii=False), is_correct)
+        )
+        db.commit()
+        return jsonify({'ok': True, 'feedback': feedback, 'is_correct': bool(is_correct)})
+
+    except Exception as e:
+        return jsonify({'ok': False, 'message': str(e)}), 500
 
 # Jinja helper
 app.jinja_env.globals.update(color_name=color_name)
