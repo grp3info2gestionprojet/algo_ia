@@ -37,7 +37,10 @@
           <td>{{ ex.title }}</td>
           <td>{{ ex.session_code or '—' }}</td>
           <td>{{ 'Publié' if ex.is_published else 'Brouillon' }}</td>
-          <td><a href="{{ url_for('teacher_session', exercise_id=ex.id) }}">Voir</a></td>
+          <td>
+            <a href="{{ url_for('teacher_session', exercise_id=ex.id) }}">Voir</a> |
+            <button class="delete-btn" style="color: red; border: none; background: none; cursor: pointer; text-decoration: underline;">Supprimer</button>
+          </td>
         </tr>
       {% endfor %}
       </tbody>
