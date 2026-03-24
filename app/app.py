@@ -533,6 +533,19 @@ def teacher_session(exercise_id):
     ''', (exercise_id,)).fetchall()
     return render_template('teacher_session.html', exercise=ex, submissions=submissions)
 
+@app.route('/api/teacher/exercise/<int:exercise_id>', methods=['DELETE'])
+@login_required('teacher')
+def teacher_delete_exercise(exercise_id):
+    db = get_db()
+    ex = db.execute('SELECT id FROM exercises WHERE id=?', (exercise_id,)).fetchone()
+    if not ex:
+        return jsonify({'ok': False, 'error': 'Exercice introuvable'}), 404
+    db.execute('DELETE FROM submissions WHERE exercise_id=?', (exercise_id,))
+    db.execute('DELETE FROM exercise_rules WHERE exercise_id=?', (exercise_id,))
+    db.execute('DELETE FROM exercises WHERE id=?', (exercise_id,))
+    db.commit()
+    return jsonify({'ok': True})
+
 # ---------------- Student ----------------
 @app.route('/student/dashboard')
 @login_required('student')

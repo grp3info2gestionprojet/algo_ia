@@ -7,7 +7,7 @@
     <p class="muted">Exercice : <b>{{ exercise.title }}</b> · Code : <b>{{ exercise.session_code or 'non publié' }}</b></p>
   </div>
   <div style="display: flex; gap: 10px; align-items: center;">
-    <button class="delete-btn" style="color: white; background-color: #dc3545; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;">Supprimer</button>
+    <button class="delete-btn" id="deleteExerciseBtn" data-id="{{ exercise.id }}" style="color: white; background-color: #dc3545; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;">Supprimer</button>
     <a class="secondary-btn" href="{{ url_for('teacher_dashboard') }}">Retour</a>
   </div>
 </div>
@@ -48,4 +48,17 @@
     </div>
   </aside>
 </div>
+<script>
+document.getElementById('deleteExerciseBtn').addEventListener('click', async () => {
+  const id = document.getElementById('deleteExerciseBtn').dataset.id;
+  if (!confirm('Supprimer cet exercice et toutes ses soumissions ?')) return;
+  const res = await fetch(`/api/teacher/exercise/${id}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (data.ok) {
+    window.location.href = "{{ url_for('teacher_dashboard') }}";
+  } else {
+    alert('Erreur : ' + (data.error || 'impossible de supprimer'));
+  }
+});
+</script>
 {% endblock %}
