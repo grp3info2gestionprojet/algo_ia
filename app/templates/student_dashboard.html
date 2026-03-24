@@ -19,7 +19,7 @@
   <tbody>
     {% for ex in exercises %}
     <tr>
-      <td>{{ ex.title }}</td>
+      <td><span class="exercise-status" style="font-weight: bold; margin-right: 8px; color: #666;">[Statut]</span>{{ ex.title }}</td>
       <td>{{ ex.description }}</td>
       <td>{{ ex.session_code }}</td>
       <td><a href="{{ url_for('student_exercise', exercise_id=ex.id) }}">Ouvrir</a></td>
