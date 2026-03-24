@@ -1,6 +1,26 @@
 {% extends 'base.html' %}
 {% block title %}Session{% endblock %}
 {% block content %}
+<style>
+.feedback-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.feedback-ok    { background: #d4edda; color: #1a6630; }
+.feedback-error { background: #f8d7da; color: #842029; }
+.feedback-pending { background: #e9ecef; color: #6c757d; }
+.feedback-detail {
+  margin-top: 5px;
+  font-size: 0.82em;
+  color: #555;
+  line-height: 1.4;
+  max-width: 280px;
+}
+</style>
 <div class="section-head">
   <div>
     <h1>Code de session</h1>
@@ -32,7 +52,17 @@
           <td>{{ s.created_at }}</td>
           <td>{{ s.username }}</td>
           <td><pre class="mini-pre">{{ s.generated_code }}</pre></td>
-          <td><pre class="mini-pre">{{ s.feedback_json }}</pre></td>
+          <td>
+          <td>
+            {% if s.feedback.contre_exemple %}
+              <span class="feedback-badge feedback-error">✗ Incorrect</span>
+              <div class="feedback-detail">{{ s.feedback.contre_exemple }}</div>
+            {% elif s.feedback %}
+              <span class="feedback-badge feedback-ok">✓ Code correct</span>
+            {% else %}
+              <span class="feedback-badge feedback-pending">—</span>
+            {% endif %}
+          </td>
         </tr>
       {% else %}
         <tr><td colspan="4" class="muted">Aucune soumission</td></tr>

@@ -528,9 +528,17 @@ def teacher_session(exercise_id):
     if not ex:
         return redirect(url_for('teacher_dashboard'))
     db = get_db()
-    submissions = db.execute('''
+    rows = db.execute('''
         SELECT s.*, u.username FROM submissions s JOIN users u ON u.id=s.student_id WHERE exercise_id=? ORDER BY created_at DESC
     ''', (exercise_id,)).fetchall()
+    submissions = []
+    for row in rows:
+        s = dict(row)
+        try:
+            s['feedback'] = json.loads(s['feedback_json']) if s['feedback_json'] else {}
+        except Exception:
+            s['feedback'] = {}
+        submissions.append(s)
     return render_template('teacher_session.html', exercise=ex, submissions=submissions)
 
 @app.route('/api/teacher/exercise/<int:exercise_id>', methods=['DELETE'])
