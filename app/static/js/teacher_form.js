@@ -227,7 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (data.ok) {
       renderPreview(data);
-      alert(`✓ Exercice publié.\nCode session : ${data.session_code || 'N/A'}`);
+      alert(`✓ Exercice publié.\nID Exercice : ${data.session_code || 'N/A'}`);
       window.location.href = `/teacher/session/${data.exercise_id}`;
     }
   });

@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Session{% endblock %}
+{% block title %}ID{% endblock %}
 {% block content %}
 <style>
 .feedback-badge {
@@ -23,7 +23,7 @@
 </style>
 <div class="section-head">
   <div>
-    <h1>Code de session</h1>
+    <h1>ID Exercice</h1>
     <p class="muted">Exercice : <b>{{ exercise.title }}</b> · Code : <b>{{ exercise.session_code or 'non publié' }}</b></p>
   </div>
   <div style="display: flex; gap: 10px; align-items: center;">

@@ -3,7 +3,7 @@
 {% block content %}
 <div class="section-head">
   <div>
-    <h1>Code de session</h1>
+    <h1>ID Exercice</h1>
     <p class="muted">Créer, publier et suivre les exercices.</p>
   </div>
   <a class="primary-btn" href="{{ url_for('teacher_new_exercise') }}">+ Ajouter Exercice</a>
@@ -30,7 +30,7 @@
       <div class="stat-card"><span>Publiés</span><strong>{{ exercises|selectattr('is_published')|list|length }}</strong></div>
     </div>
     <table class="data-table compact">
-      <thead><tr><th>Titre</th><th>Session</th><th>Statut</th><th>Action</th></tr></thead>
+      <thead><tr><th>Titre</th><th>ID</th><th>Statut</th><th>Action</th></tr></thead>
       <tbody>
       {% for ex in exercises %}
         <tr>
