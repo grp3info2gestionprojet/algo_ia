@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Étudiant{% endblock %}
+{% block content %}
+<div class="section-head">
+  <div>
+    <h1>Exercices publiés</h1>
+    <p class="muted">Choisissez un exercice publié par le professeur.</p>
+  </div>
+</div>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Titre</th>
+      <th>Description</th>
+      <th>Id Exercice</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for ex in exercises %}
+    <tr>
+      <td>
+        {% if ex.id in validated_ids %}
+          <span class="exercise-status" style="display:inline-block; padding:2px 10px; border-radius:12px; font-size:0.8em; font-weight:600; background:#d4edda; color:#1a6630; margin-right:8px;">✓ Fait</span>
+        {% else %}
+          <span class="exercise-status" style="display:inline-block; padding:2px 10px; border-radius:12px; font-size:0.8em; font-weight:600; background:#e9ecef; color:#6c757d; margin-right:8px;">À faire</span>
+        {% endif %}
+        {{ ex.title }}
+      </td>
+      <td>{{ ex.description }}</td>
+      <td>{{ ex.session_code }}</td>
+      <td><a href="{{ url_for('student_exercise', exercise_id=ex.id) }}">Ouvrir</a></td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="4" class="muted">Aucun exercice publié</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

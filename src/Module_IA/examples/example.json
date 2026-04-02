@@ -1,0 +1,40 @@
+{
+  "init": {
+    "b": 4,
+    "j": 5,
+    "r": 1,
+    "v": 1
+  },
+  "max_steps": 30,
+  "goal_condition": "b==0",
+  "rules": {
+    "vars": [
+      "b",
+      "j",
+      "r",
+      "v"
+    ],
+    "rules": [
+      {
+        "name": "retirer bleue si possible",
+        "condition": "b>=1",
+        "updates": {
+          "r": "r",
+          "v": "v",
+          "b": "b-1",
+          "j": "j"
+        }
+      },
+      {
+        "name": "rien sinon",
+        "condition": "b<1",
+        "updates": {
+          "r": "r",
+          "v": "v",
+          "b": "b",
+          "j": "j"
+        }
+      }
+    ]
+  }
+}

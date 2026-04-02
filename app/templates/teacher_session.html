@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block title %}ID{% endblock %}
+{% block content %}
+<style>
+.feedback-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.feedback-ok    { background: #d4edda; color: #1a6630; }
+.feedback-error { background: #f8d7da; color: #842029; }
+.feedback-pending { background: #e9ecef; color: #6c757d; }
+.feedback-detail {
+  margin-top: 5px;
+  font-size: 0.82em;
+  color: #555;
+  line-height: 1.4;
+  max-width: 280px;
+}
+</style>
+<div class="section-head">
+  <div>
+    <h1>ID Exercice</h1>
+    <p class="muted">Exercice : <b>{{ exercise.title }}</b> · Code : <b>{{ exercise.session_code or 'non publié' }}</b></p>
+  </div>
+  <div style="display: flex; gap: 10px; align-items: center;">
+    <button class="delete-btn" id="deleteExerciseBtn" data-id="{{ exercise.id }}" style="color: white; background-color: #dc3545; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;">Supprimer</button>
+    <a class="secondary-btn" href="{{ url_for('teacher_dashboard') }}">Retour</a>
+  </div>
+</div>
+
+<div class="session-layout">
+  <aside class="left-list-panel">
+    <div class="list-box single-item">{{ exercise.title }}</div>
+  </aside>
+
+  <section class="stats-panel">
+    <div class="panel-title">Statistiques de l’exercice</div>
+    <div class="exercise-meta">
+      <p><b>Description :</b> {{ exercise.description }}</p>
+      <p><b>Goal :</b> {{ exercise.goal_condition }}</p>
+      <p><b>État initial :</b> b={{ exercise.init_b }}, j={{ exercise.init_j }}, r={{ exercise.init_r }}, v={{ exercise.init_v }}</p>
+    </div>
+    <table class="data-table">
+      <thead><tr><th>Date</th><th>Étudiant</th><th>Code généré</th><th>Feedback</th></tr></thead>
+      <tbody>
+      {% for s in submissions %}
+        <tr>
+          <td>{{ s.created_at }}</td>
+          <td>{{ s.username }}</td>
+          <td><pre class="mini-pre">{{ s.generated_code }}</pre></td>
+          <td>
+          <td>
+            {% if s.feedback.contre_exemple %}
+              <span class="feedback-badge feedback-error">✗ Incorrect</span>
+              <div class="feedback-detail">{{ s.feedback.contre_exemple }}</div>
+            {% elif s.feedback %}
+              <span class="feedback-badge feedback-ok">✓ Code correct</span>
+            {% else %}
+              <span class="feedback-badge feedback-pending">—</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="muted">Aucune soumission</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <aside class="students-panel">
+    <div class="students-box">
+      <div class="students-label">nombre d’étudiant :</div>
+      <div class="students-value">{{ submissions|length }}</div>
+    </div>
+  </aside>
+</div>
+<script>
+document.getElementById('deleteExerciseBtn').addEventListener('click', async () => {
+  const id = document.getElementById('deleteExerciseBtn').dataset.id;
+  if (!confirm('Supprimer cet exercice et toutes ses soumissions ?')) return;
+  const res = await fetch(`/api/teacher/exercise/${id}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (data.ok) {
+    window.location.href = "{{ url_for('teacher_dashboard') }}";
+  } else {
+    alert('Erreur : ' + (data.error || 'impossible de supprimer'));
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}Professeur{% endblock %}
+{% block content %}
+<div class="section-head">
+  <div>
+    <h1>ID Exercice</h1>
+    <p class="muted">Créer, publier et suivre les exercices.</p>
+  </div>
+  <a class="primary-btn" href="{{ url_for('teacher_new_exercise') }}">+ Ajouter Exercice</a>
+</div>
+
+<div class="session-layout">
+  <aside class="left-list-panel">
+    <div class="list-box">
+      {% if exercises %}
+        {% for ex in exercises %}
+          <a class="exercise-link" href="{{ url_for('teacher_session', exercise_id=ex.id) }}">{{ ex.title }}</a>
+        {% endfor %}
+      {% else %}
+        <div class="muted">Aucun exercice</div>
+      {% endif %}
+    </div>
+    <a class="small-link" href="{{ url_for('teacher_new_exercise') }}">+ Ajouter Exercice</a>
+  </aside>
+
+  <section class="stats-panel">
+    <div class="panel-title">Statistiques de l’exercice</div>
+    <div class="stats-grid">
+      <div class="stat-card"><span>Total exercices</span><strong>{{ exercises|length }}</strong></div>
+      <div class="stat-card"><span>Publiés</span><strong>{{ exercises|selectattr('is_published')|list|length }}</strong></div>
+    </div>
+    <table class="data-table compact">
+      <thead><tr><th>Titre</th><th>ID</th><th>Statut</th><th>Action</th></tr></thead>
+      <tbody>
+      {% for ex in exercises %}
+        <tr>
+          <td>{{ ex.title }}</td>
+          <td>{{ ex.session_code or '—' }}</td>
+          <td>{{ 'Publié' if ex.is_published else 'Brouillon' }}</td>
+          <td>
+            <a href="{{ url_for('teacher_session', exercise_id=ex.id) }}">Voir</a> |
+            <button class="delete-btn" data-id="{{ ex.id }}" style="color: red; border: none; background: none; cursor: pointer; text-decoration: underline;">Supprimer</button>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <aside class="students-panel">
+    <div class="students-box">
+      <div class="students-label">nombre d’étudiant :</div>
+      <div class="students-value">1</div>
+    </div>
+  </aside>
+</div>
+<script>
+document.querySelectorAll('.delete-btn[data-id]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const id = btn.dataset.id;
+    if (!confirm('Supprimer cet exercice et toutes ses soumissions ?')) return;
+    const res = await fetch(`/api/teacher/exercise/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.ok) {
+      btn.closest('tr').remove();
+      const link = document.querySelector(`.exercise-link[href*="/teacher/session/${id}"]`);
+      if (link) link.remove();
+    } else {
+      alert('Erreur : ' + (data.error || 'impossible de supprimer'));
+    }
+  });
+});
+</script>
+{% endblock %}
