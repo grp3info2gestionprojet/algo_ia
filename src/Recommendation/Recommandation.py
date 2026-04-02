@@ -3,11 +3,23 @@ from contre_exemple import GenerateurContreExemples
 
 
 # ---------------------------------------------------------------------------
-# Constantes
+# Constantes globales
 # ---------------------------------------------------------------------------
+
+# Les 4 couleurs disponibles dans le jeu, dans l'ordre correspondant aux indices 0..3
 COULEURS = ['B', 'J', 'R', 'V']
+
+# Dictionnaire de correspondance code couleur -> nom complet (pour l'affichage)
 NOM_COULEURS = {'B': 'Bleu', 'J': 'Jaune', 'R': 'Rouge', 'V': 'Vert'}
 
+# Table complète des actions disponibles, identifiées par un entier (action_id) :
+#   0-3   -> Poser(B/J/R/V)          : déposer un jeton sur la case de la couleur
+#   4-7   -> Retirer(B/J/R/V)        : retirer un jeton de la case
+#   8-11  -> SI Est_vide(B/J/R/V)    : condition "la case est vide"
+#  12-15  -> SI NON Est_vide(B/J/R/V): condition "la case n'est pas vide"
+#  16     -> FIN_SI                  : fermeture d'un bloc conditionnel
+#  17     -> STOP                    : fin d'exécution
+#  18     -> SINON                   : branche alternative d'un SI
 ALL_ACTIONS = {
     **{i: f"Poser({COULEURS[i]})" for i in range(4)},
     **{i+4: f"Retirer({COULEURS[i]})" for i in range(4)},
@@ -18,8 +30,10 @@ ALL_ACTIONS = {
     18: "SINON",
 }
 
-# Seuil en dessous duquel on considère qu'on est en situation d'impasse
-# et on active automatiquement les suggestions de suppression/remplacement
+# Seuil de progression minimale (en taux de correspondance) en dessous duquel
+# on considère qu'aucun simple ajout n'améliore suffisamment le code.
+# Si le meilleur ajout possible ne progresse pas d'au moins 5%, on entre en "impasse"
+# et on envisage aussi suppressions et remplacements.
 SEUIL_IMPASSE = 0.05
 
 
@@ -28,7 +42,15 @@ SEUIL_IMPASSE = 0.05
 # ---------------------------------------------------------------------------
 
 def profondeur_si(code_ids):
-    """Retourne le nombre de SI ouverts non fermés."""
+    """
+    Retourne le nombre de blocs SI actuellement ouverts et non fermés
+    dans la liste d'instructions `code_ids`.
+
+    Un SI ouvert incrémente un compteur de profondeur,
+    un FIN_SI le décrémente.
+    Si la profondeur est > 0, le code est "en cours" à l'intérieur d'un ou
+    plusieurs blocs conditionnels.
+    """
     depth = 0
     for aid in code_ids:
         action = ALL_ACTIONS.get(aid, "")
@@ -41,31 +63,40 @@ def profondeur_si(code_ids):
 
 def sinon_possible(code_ids):
     """
-    Retourne True si un SINON est syntaxiquement légal en fin de `code_ids`.
-    Conditions : au moins un SI ouvert ET le SI courant (le plus récent) n'a
-    pas encore de SINON.
-    Chaque entrée de la pile vaut True si un SINON a déjà été rencontré pour
-    ce niveau.
+    Retourne True si l'instruction SINON est syntaxiquement légale
+    à la fin du code `code_ids`.
+
+    Deux conditions sont requises :
+      1. Au moins un bloc SI est encore ouvert (pile non vide).
+      2. Le SI le plus récent n'a pas encore reçu de SINON.
+
+    Fonctionnement :
+        On parcourt code_ids et on maintient une pile de booléens
+        (un booléen par SI ouvert) qui vaut True si ce SI a déjà un SINON.
     """
     stack = []  # pile de booléens : a_sinon pour chaque SI ouvert
     for aid in code_ids:
         action = ALL_ACTIONS.get(aid, "")
         if action.startswith("SI "):
-            stack.append(False)          # nouveau SI, pas encore de SINON
+            stack.append(False)          # nouveau SI sans SINON
         elif action == "SINON":
             if stack:
                 stack[-1] = True         # marque le SINON pour le SI courant
         elif action == "FIN_SI":
             if stack:
-                stack.pop()
-    # SINON légal ssi la pile est non vide et le SI courant n'a pas encore de SINON
+                stack.pop()              # ferme le SI le plus récent
+    # SINON est légal seulement si la pile est non vide ET que le SI courant
+    # n'a pas encore de SINON
     return bool(stack) and not stack[-1]
 
 
 def sinon_actif(code_ids):
     """
-    Retourne True si on se trouve actuellement dans la branche SINON du SI
-    le plus récent (utile pour les heuristiques de contexte).
+    Retourne True si, à la fin du code `code_ids`, on se trouve
+    à l'intérieur de la branche SINON du SI le plus récent encore ouvert.
+
+    Fonctionnement identique à sinon_possible : on empile les SI et on marque
+    quand un SINON est rencontré.
     """
     stack = []
     for aid in code_ids:
@@ -82,41 +113,64 @@ def sinon_actif(code_ids):
 
 
 def fermeture_minimale(code_ids):
-    """Suffixe minimal pour fermer les SI ouverts et terminer avec STOP."""
+    """
+    Génère le suffixe minimal nécessaire pour rendre `code_ids` exécutable :
+    autant de FIN_SI (16) qu'il y a de SI ouverts, puis un STOP (17).
+
+    Utilisée par taux_correspondance() pour pouvoir exécuter un code partiel
+    (sans STOP ni FIN_SI de fermeture) sur l'oracle.
+    """
     depth = profondeur_si(code_ids)
     return [16] * depth + [17]
 
 
 def instructions_valides_apres(code_ids):
-    """Instructions syntaxiquement légales à ajouter en fin de code."""
+    """
+    Retourne la liste des action_ids qu'il est légal d'ajouter
+    immédiatement APRÈS le code `code_ids`.
+
+    Règles de validité syntaxique :
+      - FIN_SI est interdit s'il n'y a aucun SI ouvert (profondeur == 0)
+      - STOP est interdit s'il reste des SI ouverts (profondeur != 0)
+      - SINON est interdit si sinon_possible() renvoie False
+
+    Toutes les autres instructions de ALL_ACTIONS sont toujours autorisées.
+    """
     depth = profondeur_si(code_ids)
     peut_sinon = sinon_possible(code_ids)
     valides = []
     for aid, action in ALL_ACTIONS.items():
         if action == "FIN_SI" and depth == 0:
-            continue
+            continue  # impossible de fermer un SI inexistant
         if action == "STOP" and depth != 0:
-            continue
+            continue  # impossible de stopper avec des SI encore ouverts
         if action == "SINON" and not peut_sinon:
-            continue
+            continue  # SINON non autorisé ici
         valides.append(aid)
     return valides
 
 
 def code_valide_apres_suppression(code_ids, position):
     """
-    Vérifie que supprimer l'instruction à `position` donne un code
-    structurellement cohérent (pas de FIN_SI orphelin, pas de SINON orphelin,
-    profondeur >= 0).
-    Retourne le code résultant ou None si invalide.
+    Vérifie que supprimer l'instruction à l'index `position` dans `code_ids`
+    produit un code structurellement cohérent, puis retourne ce code réduit.
+    Retourne None si la suppression violerait la structure SI/SINON/FIN_SI.
+
+    Critères de validité vérifiés sur le code résultant :
+      - La profondeur de SI ne devient jamais négative
+      - Tout SINON correspond à un SI ouvert sans SINON existant
+      - Tout FIN_SI correspond à un SI ouvert
+
+    Cette fonction est utilisée par candidats_suppression() pour filtrer
+    les suppressions structurellement invalides avant de les évaluer.
     """
     if position < 0 or position >= len(code_ids):
         return None
 
+    # Construit le code sans l'instruction à 'position'
     code_sans = code_ids[:position] + code_ids[position + 1:]
 
-    # Vérification : la profondeur ne doit jamais devenir négative,
-    # et SINON/FIN_SI doivent rester cohérents.
+    # Vérifie la cohérence structurelle du code résultant
     stack = []  # pile de booléens : a_sinon pour chaque SI ouvert
     for aid in code_sans:
         action = ALL_ACTIONS.get(aid, "")
@@ -124,58 +178,50 @@ def code_valide_apres_suppression(code_ids, position):
             stack.append(False)
         elif action == "SINON":
             if not stack or stack[-1]:
-                return None  # SINON sans SI ouvert, ou double SINON
+                return None  # SINON sans SI ouvert, ou double SINON -> invalide
             stack[-1] = True
         elif action == "FIN_SI":
             if not stack:
-                return None  # FIN_SI sans SI correspondant
+                return None  # FIN_SI sans SI correspondant -> invalide
             stack.pop()
 
-    return code_sans
+    return code_sans  # la suppression est légale
 
 
 def instructions_valides_en_position(code_ids, position):
     """
-    Instructions qu'il est légal de mettre à `position` dans le code,
-    en tenant compte du contexte avant et après cette position.
+    Retourne la liste des action_ids qu'il est légal de placer
+    à l'index `position` dans `code_ids` (pour un remplacement).
+
+    Algorithme :
+      1. Déduire la profondeur et l'état SINON avant la position.
+      2. Pour chaque action candidate, simuler son insertion et rejouer
+         le reste du code (code_apres) pour vérifier que la structure reste
+         cohérente jusqu'à la fin.
+      3. N'ajouter à la liste que les actions dont la simulation est valide.
+
+    Utilisée par candidats_remplacement() pour ne tester que des remplacements
+    syntaxiquement corrects.
     """
     code_avant = code_ids[:position]
-    code_apres = code_ids[position + 1:]  # on ignore l'instruction actuelle
+    code_apres = code_ids[position + 1:]  # on exclut l'instruction actuelle
 
     depth_avant = profondeur_si(code_avant)
     peut_sinon_avant = sinon_possible(code_avant)
 
     valides = []
     for aid, action in ALL_ACTIONS.items():
-        # Contraintes liées à la position
+        # ── Vérifications sur le contexte avant la position ──
         if action == "FIN_SI" and depth_avant == 0:
             continue  # pas de SI ouvert avant cette position
         if action == "STOP" and depth_avant != 0:
-            continue  # des SI sont encore ouverts
+            continue  # des SI sont encore ouverts avant
         if action == "SINON" and not peut_sinon_avant:
-            continue  # SINON non légal ici
+            continue  # SINON non légal à cette position
 
-        # Calculer la profondeur et l'état pile après cette instruction
-        if action.startswith("SI "):
-            depth_apres_inst = depth_avant + 1
-            stack_apres = [False]  # nouveau SI sans SINON
-        elif action == "FIN_SI":
-            depth_apres_inst = depth_avant - 1
-            stack_apres = []
-        elif action == "SINON":
-            depth_apres_inst = depth_avant
-            stack_apres = [True]   # SINON posé
-        else:
-            depth_apres_inst = depth_avant
-            stack_apres = []
-
-        # Vérifier que la profondeur ne devient jamais négative dans la suite,
-        # et que les SINON restent cohérents.
-        # On reconstruit la pile à partir de stack_apres (état courant du niveau)
-        # en rejouant code_apres.
-        depth_check = depth_apres_inst
-        # stack simplifiée : on suit seulement la profondeur et si le sommet a un SINON
-        # Pour simplifier, on réutilise la vérification structurelle complète.
+        # ── Vérification que la suite du code reste cohérente ──
+        # On reconstruit le code complet avec l'instruction candidate et on
+        # rejoue toute la séquence pour détecter d'éventuelles incohérences.
         code_test = code_avant + [aid] + code_apres
         valide_suite = True
         stack_check = []
@@ -201,18 +247,25 @@ def instructions_valides_en_position(code_ids, position):
 
 
 def couleur_si_actif(code_ids):
-    """Retourne la couleur du SI le plus récent encore ouvert, ou None."""
-    si_stack = []  # liste de (couleur, a_sinon)
+    """
+    Retourne la couleur du bloc SI le plus récent encore ouvert
+    dans `code_ids`, ou None si aucun SI n'est ouvert.
+
+    Utilisée par bonus_contexte_ajout() pour donner un bonus aux actions
+    qui portent sur la même couleur que le SI courant (cohérence sémantique).
+    """
+    si_stack = []  # liste de (couleur, a_sinon) pour chaque SI ouvert
     for aid in code_ids:
         action = ALL_ACTIONS.get(aid, "")
         if action.startswith("SI "):
+            # Extrait la couleur de l'action (ex. 'R' dans "SI NON Est_vide(R)")
             for c in COULEURS:
                 if f"({c})" in action:
                     si_stack.append((c, False))
                     break
         elif action == "SINON" and si_stack:
             couleur, _ = si_stack[-1]
-            si_stack[-1] = (couleur, True)
+            si_stack[-1] = (couleur, True)  # marque qu'on est dans la branche SINON
         elif action == "FIN_SI" and si_stack:
             si_stack.pop()
     return si_stack[-1][0] if si_stack else None
@@ -225,10 +278,13 @@ def couleur_si_actif(code_ids):
 def couleur_non_est_vide_actif(code_ids):
     """
     Retourne l'ensemble des couleurs X pour lesquelles un bloc
-    'SI NON Est_vide(X)' est actuellement ouvert ET on est dans la branche SI
-    (pas dans la branche SINON, où la case peut être vide).
+    'SI NON Est_vide(X)' est actuellement ouvert ET on se trouve dans la
+    branche SI (pas dans la branche SINON).
+
+    Utilisée par appliquer_regle_securite_retirer() pour savoir si une
+    action Retirer(X) est déjà sécurisée dans le contexte courant.
     """
-    si_stack = []  # liste de (couleur_ou_None, a_sinon)
+    si_stack = []  # liste de (couleur_ou_None, a_sinon) pour chaque SI ouvert
     for aid in code_ids:
         action = ALL_ACTIONS.get(aid, "")
         if action.startswith("SI NON Est_vide("):
@@ -237,28 +293,34 @@ def couleur_non_est_vide_actif(code_ids):
                     si_stack.append((c, False))
                     break
         elif action.startswith("SI Est_vide("):
-            si_stack.append((None, False))  # SI d'une autre nature
+            # SI classique (la case est vide) -> ne protège pas un Retirer
+            si_stack.append((None, False))
         elif action == "SINON" and si_stack:
             couleur, _ = si_stack[-1]
-            si_stack[-1] = (couleur, True)
+            si_stack[-1] = (couleur, True)  # on entre dans la branche SINON
         elif action == "FIN_SI" and si_stack:
             si_stack.pop()
-    # La protection est active uniquement si on est dans la branche SI (pas SINON)
+    # Protection active uniquement si on est dans la branche SI (a_sinon == False)
     return set(c for c, a_sinon in si_stack if c is not None and not a_sinon)
 
 
 def appliquer_regle_securite_retirer(meilleure_action_id, code_partiel):
     """
-    Si la meilleure action est Retirer(X) et qu'il n'y a pas de
-    'SI NON Est_vide(X)' ouvert dans le contexte courant, retourne l'id
-    du 'SI NON Est_vide(X)' à ajouter en premier.
-    Sinon retourne None (pas de substitution nécessaire).
+    Règle de sécurité : si l'action la mieux notée est Retirer(X) mais
+    qu'il n'existe pas de 'SI NON Est_vide(X)' ouvert dans le contexte
+    courant, il faut d'abord recommander d'ajouter ce bloc conditionnel.
+
+    Retourne :
+      - L'action_id du 'SI NON Est_vide(X)' à insérer en priorité, si
+        la protection est manquante.
+      - None si l'action n'est pas un Retirer, ou si la protection existe déjà.
+
     """
     action = ALL_ACTIONS.get(meilleure_action_id, "")
     if not action.startswith("Retirer("):
-        return None
+        return None  # la règle ne s'applique qu'à Retirer
 
-    # Quelle couleur ?
+    # Détermine la couleur concernée
     couleur = None
     for c in COULEURS:
         if f"({c})" in action:
@@ -267,14 +329,15 @@ def appliquer_regle_securite_retirer(meilleure_action_id, code_partiel):
     if couleur is None:
         return None
 
-    # Y a-t-il déjà un SI NON Est_vide(couleur) ouvert ?
+    # Vérifie si cette couleur est déjà protégée par un SI NON Est_vide ouvert
     proteges = couleur_non_est_vide_actif(code_ids=code_partiel)
     if couleur in proteges:
-        return None  # déjà protégé, pas besoin d'interposer un SI
+        return None  # déjà protégé, aucune substitution nécessaire
 
-    # Retourner l'id de SI NON Est_vide(couleur)
+    # Retourne l'id du SI NON Est_vide(couleur) correspondant
+    # Les ids 12-15 correspondent à SI NON Est_vide(B/J/R/V)
     idx_couleur = COULEURS.index(couleur)
-    return 12 + idx_couleur  # ids 12-15 = SI NON Est_vide(B/J/R/V)
+    return 12 + idx_couleur
 
 
 # ---------------------------------------------------------------------------
@@ -283,8 +346,22 @@ def appliquer_regle_securite_retirer(meilleure_action_id, code_partiel):
 
 def taux_correspondance(code_ids, oracle, interpreter):
     """
-    Exécute le code (complété avec fermeture minimale) sur tous les états
-    de l'oracle. Retourne (nb_corrects, nb_total, taux).
+    Évalue quantitativement la qualité d'un code en le comparant à l'oracle.
+
+    Procédure :
+      1. Complète le code partiel avec fermeture_minimale() (FIN_SI + STOP)
+         pour le rendre exécutable même s'il est incomplet.
+      2. Exécute ce code sur chacun des états initiaux de l'oracle.
+      3. Compte le nombre d'états pour lesquels le plateau final correspond
+         exactement à l'état final attendu par l'oracle.
+
+    Retourne :
+      - nb_corrects : nombre d'états de l'oracle correctement reproduits
+      - nb_total    : taille totale de l'oracle
+      - taux        : nb_corrects / nb_total (entre 0.0 et 1.0)
+
+    Un taux de 1.0 signifie que le code est fonctionnellement équivalent
+    au code de référence sur tous les états de l'oracle.
     """
     code_complet = code_ids + fermeture_minimale(code_ids)
     nb_corrects = 0
@@ -305,21 +382,41 @@ def taux_correspondance(code_ids, oracle, interpreter):
 # ---------------------------------------------------------------------------
 
 def bonus_contexte_ajout(action_id, code_partiel):
-    """Bonus/malus pour un ajout en fin de code."""
+    """
+    Calcule un bonus ou malus heuristique pour l'ajout de l'action `action_id`
+    à la fin de `code_partiel`. Ce score vient s'ajouter au score comportemental
+    (calculé à partir du taux de correspondance).
+
+    Règles appliquées :
+      +0.2  si l'action concerne la même couleur que le SI actuellement ouvert
+            -> favorise la cohérence sémantique (on travaille sur la case testée)
+      -0.4  si l'action est FIN_SI et que la dernière instruction était un SI
+             -> pénalise les blocs SI vides, qui n'ont aucun effet
+      -0.3  si on ajoute un SI alors qu'on est déjà à une profondeur >= 3
+            -> déconseille les imbrications excessivement profondes
+      -0.2  si on ajoute un SI juste après un autre SI sans action entre les deux
+            -> pénalise deux SI consécutifs sans corps (souvent une erreur)
+
+    Retourne un flottant (positif ou négatif) à ajouter au score total.
+    """
     action = ALL_ACTIONS.get(action_id, "")
     score = 0.0
     depth = profondeur_si(code_partiel)
-    c_si = couleur_si_actif(code_partiel)
+    c_si = couleur_si_actif(code_partiel)           # couleur du SI courant
     derniere = ALL_ACTIONS.get(code_partiel[-1], "") if code_partiel else ""
 
+    # Bonus de cohérence couleur
     if c_si and f"({c_si})" in action:
         score += 0.2
+    # Pénalité bloc SI vide
     if action == "FIN_SI" and derniere.startswith("SI "):
-        score -= 0.4  # bloc SI vide
+        score -= 0.4
+    # Pénalité imbrication trop profonde
     if action.startswith("SI ") and depth >= 3:
-        score -= 0.3  # trop imbriqué
+        score -= 0.3
+    # Pénalité deux SI consécutifs
     if action.startswith("SI ") and derniere.startswith("SI "):
-        score -= 0.2  # deux SI consécutifs sans action
+        score -= 0.2
 
     return score
 
@@ -329,19 +426,41 @@ def bonus_contexte_ajout(action_id, code_partiel):
 # ---------------------------------------------------------------------------
 
 def candidats_ajout(code_partiel, oracle, interpreter, taux_base):
-    """Génère tous les candidats de type AJOUTER."""
+    """
+    Génère la liste de tous les candidats de type AJOUTER.
+
+    Pour chaque instruction légale après `code_partiel` :
+      1. Construit le code candidat = code_partiel + [action].
+      2. Évalue ce code sur l'oracle via taux_correspondance().
+      3. Calcule un score composite :
+           score_comportemental = taux * 2.0 + delta * 3.0
+              (le delta représente l'amélioration par rapport à la base ;
+               pondéré plus fortement pour favoriser les vrais progrès)
+           score_structural     -> bonus pour STOP (si taux > 0) et FIN_SI
+           score_contexte       -> bonus/malus de bonus_contexte_ajout()
+           score_total = somme des trois
+
+    Retourne une liste de dicts, chacun contenant :
+      type, action_id, action_nom, position, score, taux, delta,
+      nb_corrects, nb_total, code_resultant.
+    """
     candidats = []
     for aid in instructions_valides_apres(code_partiel):
         code_candidat = code_partiel + [aid]
         nb_corrects, nb_total, taux = taux_correspondance(code_candidat, oracle, interpreter)
         delta = taux - taux_base
 
+        # Score comportemental : récompense un taux élevé et une progression
         score_comportemental = taux * 2.0 + delta * 3.0
+
+        # Score structural : bonus léger pour les instructions de clôture
         score_structural = 0.0
         if ALL_ACTIONS[aid] == "STOP" and taux > 0:
-            score_structural += 0.3
+            score_structural += 0.3   # STOP qui produit un résultat non nul est positif
         if ALL_ACTIONS[aid] == "FIN_SI":
-            score_structural += 0.1
+            score_structural += 0.1   # fermeture d'un bloc = légèrement préférable
+
+        # Score contextuel : heuristiques de cohérence structurelle
         score_contexte = bonus_contexte_ajout(aid, code_partiel)
 
         score = score_comportemental + score_structural + score_contexte
@@ -350,7 +469,7 @@ def candidats_ajout(code_partiel, oracle, interpreter, taux_base):
             "type": "AJOUTER",
             "action_id": aid,
             "action_nom": ALL_ACTIONS[aid],
-            "position": len(code_partiel),
+            "position": len(code_partiel),  # position d'insertion = fin du code
             "score": round(score, 4),
             "taux": round(taux, 4),
             "delta": round(delta, 4),
@@ -362,22 +481,44 @@ def candidats_ajout(code_partiel, oracle, interpreter, taux_base):
 
 
 def candidats_suppression(code_partiel, oracle, interpreter, taux_base):
-    """Génère tous les candidats de type SUPPRIMER."""
+    """
+    Génère la liste de tous les candidats de type SUPPRIMER.
+    Cette fonction n'est appelée qu'en situation d'impasse.
+
+    Pour chaque position possible dans `code_partiel` :
+      1. Vérifie que la suppression est structurellement légale
+         (code_valide_apres_suppression retourne le code réduit, ou None).
+      2. Évalue le code réduit sur l'oracle.
+      3. Filtre : on ne conserve que les suppressions dont le delta >= -0.02
+         (on accepte une très légère dégradation pour éviter de rejeter des
+         corrections utiles qui n'améliorent pas immédiatement).
+      4. Calcule le score :
+           score = taux * 2.0 + delta * 3.0
+           + bonus de récence (positions récentes légèrement favorisées)
+
+    Logique de récence :
+        Plus la position est proche de la fin du code (pos élevé), plus le
+        bonus est grand. L'idée est qu'une erreur récente est plus intuitive
+        à corriger pour l'élève.
+
+    Retourne une liste de dicts similaires à candidats_ajout().
+    """
     candidats = []
     for pos in range(len(code_partiel)):
+        # Vérifie que la suppression est structurellement valide
         code_sans = code_valide_apres_suppression(code_partiel, pos)
         if code_sans is None:
-            continue  # suppression invalide structurellement
+            continue  # suppression invalide ->  on l'ignore
 
         nb_corrects, nb_total, taux = taux_correspondance(code_sans, oracle, interpreter)
         delta = taux - taux_base
 
-        # On ne suggère une suppression que si elle améliore ou au moins ne dégrade pas
+        # Ne suggère une suppression que si elle ne dégrade pas trop le code
         if delta < -0.02:
             continue
 
         score = taux * 2.0 + delta * 3.0
-        # Léger bonus si on supprime une instruction récente (plus intuitive pour l'élève)
+        # Bonus de récence : favorise la suppression d'instructions récentes
         recence = (pos / len(code_partiel)) if code_partiel else 0
         score += recence * 0.1
 
@@ -397,13 +538,31 @@ def candidats_suppression(code_partiel, oracle, interpreter, taux_base):
 
 
 def candidats_remplacement(code_partiel, oracle, interpreter, taux_base):
-    """Génère tous les candidats de type REMPLACER."""
+    """
+    Génère la liste de tous les candidats de type REMPLACER.
+    Cette fonction n'est appelée qu'en situation d'impasse.
+
+    Pour chaque position et chaque action candidate légale en cette position :
+      1. Ignore le remplacement par la même instruction (delta nul certain).
+      2. Construit le code remplacé et l'évalue sur l'oracle.
+      3. Filtre : on ne conserve que les remplacements avec delta > 0.02
+         (on exige une amélioration réelle, car un remplacement est une
+         modification plus importante qu'une simple suppression).
+      4. Calcule le score :
+           score = taux * 2.0 + delta * 3.5
+           (pondération du delta légèrement plus forte que pour l'ajout,
+           car le remplacement a un coût cognitif plus élevé)
+           + bonus de récence identique à candidats_suppression()
+
+    Retourne une liste de dicts similaires aux autres candidats, avec
+    en plus le champ "action_remplacee" (nom de l'instruction remplacée).
+    """
     candidats = []
     for pos in range(len(code_partiel)):
         action_actuelle = ALL_ACTIONS.get(code_partiel[pos], "")
         for aid in instructions_valides_en_position(code_partiel, pos):
             if aid == code_partiel[pos]:
-                continue  # pas de remplacement par la même instruction
+                continue  # on ne remplace pas une instruction par elle-même
 
             code_remplace = code_partiel[:pos] + [aid] + code_partiel[pos + 1:]
             nb_corrects, nb_total, taux = taux_correspondance(
@@ -411,12 +570,13 @@ def candidats_remplacement(code_partiel, oracle, interpreter, taux_base):
             )
             delta = taux - taux_base
 
-            # On ne suggère un remplacement que s'il améliore
+            # N'accepte un remplacement que s'il améliore significativement
             if delta <= 0.02:
                 continue
 
-            score = taux * 2.0 + delta * 3.5  # poids légèrement plus fort que l'ajout
-            # Bonus si le remplacement est sur une position récente
+            # Pondération du delta légèrement plus élevée pour les remplacements
+            score = taux * 2.0 + delta * 3.5
+            # Bonus de récence : légèrement préférable de corriger une instruction récente
             recence = (pos / len(code_partiel)) if code_partiel else 0
             score += recence * 0.1
 
@@ -425,7 +585,7 @@ def candidats_remplacement(code_partiel, oracle, interpreter, taux_base):
                 "action_id": aid,
                 "action_nom": ALL_ACTIONS[aid],
                 "position": pos,
-                "action_remplacee": action_actuelle,
+                "action_remplacee": action_actuelle,  # nom de l'instruction remplacée
                 "score": round(score, 4),
                 "taux": round(taux, 4),
                 "delta": round(delta, 4),
@@ -442,23 +602,60 @@ def candidats_remplacement(code_partiel, oracle, interpreter, taux_base):
 
 def est_en_impasse(taux_base, meilleur_delta_ajout):
     """
-    Retourne True si aucun ajout n'améliore significativement la situation,
-    ce qui indique qu'il faut probablement corriger une erreur antérieure.
+    Détermine si le système est en situation d'impasse, c'est-à-dire si
+    aucun simple ajout ne permet de progresser suffisamment.
+
+    Paramètres :
+      taux_base           : taux de correspondance actuel du code partiel
+      meilleur_delta_ajout: delta maximum obtenu par le meilleur candidat ajout
     """
     return meilleur_delta_ajout < SEUIL_IMPASSE and taux_base < 0.95
 
 
 # ---------------------------------------------------------------------------
-# Système de recommandation
+# Système de recommandation principal
 # ---------------------------------------------------------------------------
 
 class SystemeRecommandation:
+    """
+    Classe centrale qui orchestre l'ensemble du processus de recommandation.
+
+    Elle s'appuie sur :
+      - AlgorithmeInterpreter : pour exécuter les codes sur les états du plateau
+      - GenerateurContreExemples : pour construire l'oracle de référence et
+        tester si un code produit un contre-exemple
+
+    Attributs :
+      interpreter : instance d'AlgorithmeInterpreter partagée
+      generateur  : instance de GenerateurContreExemples
+    """
+
     def __init__(self, interpreter=None):
+        # Permet d'injecter un interpréteur existant
         self.interpreter = interpreter if interpreter else AlgorithmeInterpreter()
         self.generateur = GenerateurContreExemples(self.interpreter)
 
-    def construire_oracle(self, code_reference, nb_etats=150, max_valeur=5):
-        """Génère l'oracle depuis le code de référence."""
+    def construire_oracle(self, code_reference, nb_etats=150, max_valeur=20):
+        """
+        Construit l'oracle de référence à partir du code correct.
+
+        L'oracle est une liste de dicts {"etat_initial": ..., "etat_final": ...}
+        générés en exécutant le code de référence sur `nb_etats` états initiaux
+        aléatoires (dont les valeurs sont comprises entre 0 et `max_valeur`).
+        Seuls les états pour lesquels le code de référence s'exécute sans erreur
+        sont conservés.
+
+        L'oracle sert de "juge de paix" : tout code étudiant sera évalué
+        en comparant ses sorties à celles de cet oracle.
+
+        Lève ValueError si le code de référence ne produit aucun état valide
+        (code incorrect ou trop restrictif).
+
+        Paramètres :
+          code_reference : list[int], le code correct de l'exercice
+          nb_etats       : int, nombre d'états initiaux à générer
+          max_valeur     : int, valeur maximale possible dans un état initial
+        """
         oracle = self.generateur.generer_oracle(
             code_reference, nb_etats=nb_etats, max_valeur=max_valeur
         )
@@ -471,34 +668,37 @@ class SystemeRecommandation:
 
     def recommander(self, code_partiel, oracle, verbose=False):
         """
-        Analyse le code partiel et retourne LA meilleure opération à effectuer.
+        Analyse le code partiel de l'élève et retourne LA meilleure opération
+        unique à effectuer pour progresser vers le code de référence.
 
-        En situation normale : évalue uniquement les ajouts.
-        En situation d'impasse (aucun ajout n'améliore) : évalue aussi
-        les suppressions et les remplacements.
+        Algorithme général :
+          1. Calcule le taux de correspondance actuel (taux_base).
+          2. Si taux_base == 1.0 -> code correct, pas de recommandation.
+          3. Calcule tous les candidats d'ajout et le meilleur delta possible.
+          4. Si aucun ajout ne progresse suffisamment (impasse) :
+               -> calcule aussi les candidats de suppression et remplacement.
+          5. Fusionne et trie tous les candidats par score décroissant.
+          6. Applique la règle de sécurité Retirer(X) :
+               si la meilleure action est Retirer(X) sans protection,
+               la substitue par SI NON Est_vide(X).
+          7. Retourne un dict avec la recommandation et les méta-informations.
 
-        Règle de sécurité : si la meilleure action est Retirer(X) sans bloc
-        SI NON Est_vide(X) ouvert, on substitue la recommandation par
-        SI NON Est_vide(X) à ajouter en premier.
+        Retourne un dict contenant :
+          "taux_base"               : float, correspondance actuelle
+          "impasse"                 : bool, True si en situation d'impasse
+          "recommandation"          : dict | None, la meilleure opération
+          "substituee"              : bool, True si règle de sécurité appliquée
+          "recommandation_originale": dict | None, l'action avant substitution
+          "code_correct"            : bool (présent uniquement si taux == 1.0)
 
-        Paramètres
-        ----------
-        code_partiel : list[int]
-        oracle : list[dict]
-        verbose : bool
-
-        Retourne
-        --------
-        dict avec :
-          - "taux_base"         : float, correspondance actuelle
-          - "impasse"           : bool
-          - "recommandation"    : dict, la meilleure opération unique
-          - "substituee"        : bool, True si règle de sécurité appliquée
-          - "recommandation_originale" : dict|None, l'action voulue avant substitution
+        Paramètres :
+          code_partiel : list[int], le code de l'élève (sans STOP ni FIN_SI auto)
+          oracle       : list[dict], l'oracle de référence
+          verbose      : bool, si True affiche le tableau des candidats
         """
         _, _, taux_base = taux_correspondance(code_partiel, oracle, self.interpreter)
 
-        # --- Code déjà correct : pas de recommandation ---
+        # ── Cas 1 : Code déjà correct ──
         if taux_base >= 1.0:
             return {
                 "taux_base": taux_base,
@@ -509,13 +709,14 @@ class SystemeRecommandation:
                 "code_correct": True,
             }
 
-        # --- Candidats ajout (toujours calculés) ---
+        # ── Cas 2 : Calcul des candidats ajout ──
         ajouts = candidats_ajout(code_partiel, oracle, self.interpreter, taux_base)
         meilleur_delta_ajout = max((c["delta"] for c in ajouts), default=0.0)
 
+        # On ne déclare pas d'impasse si le code est vide (rien à corriger encore)
         impasse = est_en_impasse(taux_base, meilleur_delta_ajout) and len(code_partiel) > 0
 
-        # --- Candidats suppression et remplacement (si impasse) ---
+        # ── Cas 3 (impasse) : Calcul des candidats suppression + remplacement ──
         suppressions = []
         remplacements = []
         if impasse:
@@ -526,8 +727,9 @@ class SystemeRecommandation:
                 code_partiel, oracle, self.interpreter, taux_base
             )
 
+        # ── Sélection du meilleur candidat ──
         tous_candidats = ajouts + suppressions + remplacements
-        tous_candidats.sort(key=lambda x: x["score"], reverse=True)
+        tous_candidats.sort(key=lambda x: x["score"], reverse=True)  # tri par score décroissant
 
         if verbose:
             self._afficher_tableau(tous_candidats[:8], taux_base, impasse)
@@ -543,13 +745,14 @@ class SystemeRecommandation:
 
         meilleure = tous_candidats[0]
 
-        # --- Règle de sécurité Retirer(X) ---
+        # ── Règle de sécurité : substitution Retirer(X) -> SI NON Est_vide(X) ──
         substituee = False
         originale = None
         if meilleure["type"] == "AJOUTER":
             id_si = appliquer_regle_securite_retirer(meilleure["action_id"], code_partiel)
             if id_si is not None:
-                # On substitue par SI NON Est_vide(X)
+                # On remplace la recommandation Retirer(X) par SI NON Est_vide(X)
+                # afin d'éviter une erreur d'exécution sur une case vide.
                 originale = meilleure
                 substituee = True
                 couleur = ALL_ACTIONS[id_si].replace("SI NON Est_vide(", "").rstrip(")")
@@ -558,7 +761,7 @@ class SystemeRecommandation:
                     "action_id": id_si,
                     "action_nom": ALL_ACTIONS[id_si],
                     "position": len(code_partiel),
-                    "score": meilleure["score"],  # hérite du score de Retirer(X)
+                    "score": meilleure["score"],       # hérite du score de Retirer(X)
                     "taux": meilleure["taux"],
                     "delta": meilleure["delta"],
                     "nb_corrects": meilleure["nb_corrects"],
@@ -580,7 +783,23 @@ class SystemeRecommandation:
         }
 
     def afficher_recommandations(self, code_partiel, oracle):
-        """Affiche la recommandation unique de façon lisible pour l'élève."""
+        """
+        Affiche la recommandation de manière lisible pour l'élève,
+        en mode terminal (interface de débogage/démonstration).
+
+        Affiche successivement :
+          1. Le code partiel actuel avec indentation selon la profondeur SI
+          2. Une barre de progression représentant le taux de correspondance
+          3. Un message d'impasse si applicable
+          4. La recommandation (type, action, position, score attendu)
+          5. Un avertissement si la règle de sécurité a substitué l'action
+
+        Paramètres :
+          code_partiel : list[int], le code de l'élève
+          oracle       : list[dict], l'oracle de référence
+
+        Retourne le dict résultat de recommander() (utile pour les tests).
+        """
         print("\n" + "─" * 68)
         print(f"  Code partiel ({len(code_partiel)} instruction(s)) :")
         if code_partiel:
@@ -609,7 +828,7 @@ class SystemeRecommandation:
         print(f"\n  Correspondance actuelle : {self._barre_progression(taux_base)} "
               f"{taux_base*100:.1f}%")
 
-        # --- Code déjà correct ---
+        # Cas : code déjà correct
         if resultat.get("code_correct"):
             print("\n  ✅ Le code est correct ! Il produit exactement le même")
             print("     comportement que le code de référence sur tous les états.")
@@ -638,7 +857,7 @@ class SystemeRecommandation:
                   f"[{rec['action_id']:2d}] {rec['action_nom']}")
         else:
             print(f"     {type_label} Remplacer la ligne {rec['position']} : "
-                  f"{rec['action_remplacee']} → {rec['action_nom']}")
+                  f"{rec['action_remplacee']} -> {rec['action_nom']}")
 
         barre = self._barre_progression(rec["taux"])
         signe = "+" if rec["delta"] >= 0 else ""
@@ -647,7 +866,7 @@ class SystemeRecommandation:
         print(f"     {rec['nb_corrects']}/{rec['nb_total']} états de l'oracle "
               f"correctement reproduits après cette opération.")
 
-        # Message de substitution si règle de sécurité appliquée
+        # Note de substitution si la règle de sécurité a changé l'action recommandée
         if substituee and originale:
             print(f"\n     ⚠️  Note : l'action optimale serait "
                   f"'{originale['action_nom']}', mais celle-ci risque")
@@ -658,10 +877,22 @@ class SystemeRecommandation:
         return resultat
 
     # ------------------------------------------------------------------
-    # Méthodes privées
+    # Méthodes privées (affichage interne)
     # ------------------------------------------------------------------
 
     def _afficher_tableau(self, candidats, taux_base, impasse):
+        """
+        Affiche un tableau comparatif des meilleurs candidats dans le terminal.
+        Utilisée en mode verbose par recommander().
+
+        Affiche pour chaque candidat :
+          - Type (AJOUTER / SUPPRIMER / REMPLACER)
+          - Opération résumée (+ action / - ligne N action / ~ ligne N a -> b)
+          - Nombre d'états corrects / total
+          - Delta en pourcentage
+          - Score total
+        Et rappelle en bas le score actuel (base).
+        """
         titre = "IMPASSE — ajouts + suppressions + remplacements" if impasse else "AJOUTS"
         print(f"\n  [{titre}]")
         print(f"  {'Type':<10} {'Opération':<38} {'Correct':>9} {'Delta':>8} {'Score':>8}")
@@ -672,7 +903,7 @@ class SystemeRecommandation:
             elif r["type"] == "SUPPRIMER":
                 op = f"- ligne {r['position']} {r['action_nom']}"
             else:
-                op = f"~ ligne {r['position']} {r['action_remplacee']} → {r['action_nom']}"
+                op = f"~ ligne {r['position']} {r['action_remplacee']} -> {r['action_nom']}"
             delta_str = f"+{r['delta']*100:.1f}%" if r['delta'] >= 0 else f"{r['delta']*100:.1f}%"
             print(f"  {r['type']:<10} {op:<38} "
                   f"{r['nb_corrects']:>4}/{r['nb_total']:<4} "
@@ -683,5 +914,12 @@ class SystemeRecommandation:
 
     @staticmethod
     def _barre_progression(taux, largeur=10):
+        """
+        Génère une barre de progression ASCII représentant le taux donné.
+
+        Paramètres :
+          taux    : float entre 0.0 et 1.0
+          largeur : nombre total de caractères dans la barre (défaut : 10)
+        """
         n = round(taux * largeur)
         return "[" + "█" * n + "░" * (largeur - n) + "]"
