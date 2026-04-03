@@ -4,15 +4,15 @@ const COLOR_OPTIONS = [
   { value: 'r', label: 'Rouge', className: 'red' },
   { value: 'v', label: 'Verte', className: 'green' },
 ];
-const OPERATORS = ['>=','<=','==','>','<'];
+const OPERATORS = ['>=', '<=', '==', '>', '<'];
 let rules = [];
 
-function colorLabel(code){
+function colorLabel(code) {
   return COLOR_OPTIONS.find(c => c.value === code)?.label || code;
 }
-function signedText(n){ return n > 0 ? `+${n}` : `${n}`; }
+function signedText(n) { return n > 0 ? `+${n}` : `${n}`; }
 
-function createRule(){
+function createRule() {
   return {
     name: 'retirer bleue si possible',
     condColor: 'b',
@@ -22,17 +22,19 @@ function createRule(){
   };
 }
 
-function adjustDelta(index, color, change){
+function adjustDelta(index, color, change) {
   rules[index].deltas[color] += change;
   renderRules();
 }
 
-function removeRule(index){
+function removeRule(index) {
   rules.splice(index, 1);
   renderRules();
 }
 
-function renderRules(){
+
+
+function renderRules() {
   const container = document.getElementById('rulesContainer');
   container.innerHTML = '';
   rules.forEach((rule, index) => {
@@ -48,13 +50,13 @@ function renderRules(){
               <div>
                 <div class="color-name">Couleur</div>
                 <select data-index="${index}" data-field="condColor">
-                  ${COLOR_OPTIONS.map(c => `<option value="${c.value}" ${rule.condColor===c.value?'selected':''}>${c.label}</option>`).join('')}
+                  ${COLOR_OPTIONS.map(c => `<option value="${c.value}" ${rule.condColor === c.value ? 'selected' : ''}>${c.label}</option>`).join('')}
                 </select>
               </div>
               <div>
                 <div class="color-name">Comparateur</div>
                 <select data-index="${index}" data-field="operator">
-                  ${OPERATORS.map(op => `<option value="${op}" ${rule.operator===op?'selected':''}>${op}</option>`).join('')}
+                  ${OPERATORS.map(op => `<option value="${op}" ${rule.operator === op ? 'selected' : ''}>${op}</option>`).join('')}
                 </select>
               </div>
               <div>
@@ -75,7 +77,7 @@ function renderRules(){
               ${COLOR_OPTIONS.map(c => `
                 <div class="color-col">
                   <div class="color-name">${c.label}</div>
-                  <div class="delta-box">${rule.deltas[c.value]===0 ? c.value : c.value + signedText(rule.deltas[c.value])}</div>
+                  <div class="delta-box">${rule.deltas[c.value] === 0 ? c.value : c.value + signedText(rule.deltas[c.value])}</div>
                   <div class="delta-buttons">
                     <button type="button" class="circle-btn ${c.className}" data-op="plus" data-index="${index}" data-color="${c.value}">+</button>
                     <button type="button" class="circle-btn ${c.className}" data-op="minus" data-index="${index}" data-color="${c.value}">-</button>
@@ -97,6 +99,10 @@ function renderRules(){
       const idx = Number(e.target.dataset.index);
       const field = e.target.dataset.field;
       rules[idx][field] = field === 'value' ? Number(e.target.value) : e.target.value;
+      // Si le champ modifié concerne la condition, synchroniser l'état initial
+      if (field === 'condColor' || field === 'operator' || field === 'value') {
+        syncInitWithRules();
+      }
     });
   });
   container.querySelectorAll('[data-op]').forEach(btn => {
@@ -112,7 +118,7 @@ function renderRules(){
   });
 }
 
-function buildProblem(){
+function buildProblem() {
   return {
     init: {
       b: Number(document.getElementById('init_b').value || 0),
@@ -123,15 +129,15 @@ function buildProblem(){
     max_steps: Number(document.getElementById('max_steps').value || 30),
     goal_condition: document.getElementById('goal_condition').value || 'b==0',
     rules: {
-      vars: ['b','j','r','v'],
+      vars: ['b', 'j', 'r', 'v'],
       rules: rules.map(rule => ({
         name: rule.name,
         condition: `${rule.condColor}${rule.operator}${rule.value}`,
         updates: {
-          b: rule.deltas.b === 0 ? 'b' : `b${rule.deltas.b>0?'+':''}${rule.deltas.b}`,
-          j: rule.deltas.j === 0 ? 'j' : `j${rule.deltas.j>0?'+':''}${rule.deltas.j}`,
-          r: rule.deltas.r === 0 ? 'r' : `r${rule.deltas.r>0?'+':''}${rule.deltas.r}`,
-          v: rule.deltas.v === 0 ? 'v' : `v${rule.deltas.v>0?'+':''}${rule.deltas.v}`,
+          b: rule.deltas.b === 0 ? 'b' : `b${rule.deltas.b > 0 ? '+' : ''}${rule.deltas.b}`,
+          j: rule.deltas.j === 0 ? 'j' : `j${rule.deltas.j > 0 ? '+' : ''}${rule.deltas.j}`,
+          r: rule.deltas.r === 0 ? 'r' : `r${rule.deltas.r > 0 ? '+' : ''}${rule.deltas.r}`,
+          v: rule.deltas.v === 0 ? 'v' : `v${rule.deltas.v > 0 ? '+' : ''}${rule.deltas.v}`,
         }
       }))
     }
@@ -171,9 +177,9 @@ function renderPreview(data) {
 
 async function preview(publish = false) {
   const payload = {
-    title:       document.getElementById('title').value || 'Exercice',
+    title: document.getElementById('title').value || 'Exercice',
     description: document.getElementById('description').value || '',
-    problem:     buildProblem(),
+    problem: buildProblem(),
     publish,
   };
   const endpoint = publish
@@ -181,9 +187,9 @@ async function preview(publish = false) {
     : '/api/teacher/exercise/preview';
 
   const res = await fetch(endpoint, {
-    method:  'POST',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(payload),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
@@ -196,10 +202,12 @@ async function preview(publish = false) {
 document.addEventListener('DOMContentLoaded', () => {
   rules.push(createRule());
   renderRules();
+  syncInitWithRules();
 
   document.getElementById('addRuleBtn').addEventListener('click', () => {
     rules.push(createRule());
     renderRules();
+    syncInitWithRules();
   });
 
   document.getElementById('clearBtn').addEventListener('click', () => {

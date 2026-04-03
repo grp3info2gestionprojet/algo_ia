@@ -554,6 +554,17 @@ def teacher_delete_exercise(exercise_id):
     db.commit()
     return jsonify({'ok': True})
 
+@app.route('/api/teacher/submission/<int:submission_id>', methods=['DELETE'])
+@login_required('teacher')
+def teacher_delete_submission(submission_id):
+    db = get_db()
+    row = db.execute('SELECT id FROM submissions WHERE id=?', (submission_id,)).fetchone()
+    if not row:
+        return jsonify({'ok': False, 'error': 'Soumission introuvable'}), 404
+    db.execute('DELETE FROM submissions WHERE id=?', (submission_id,))
+    db.commit()
+    return jsonify({'ok': True})
+
 # ---------------- Student ----------------
 @app.route('/student/dashboard')
 @login_required('student')

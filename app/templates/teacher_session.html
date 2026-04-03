@@ -45,14 +45,13 @@
       <p><b>État initial :</b> b={{ exercise.init_b }}, j={{ exercise.init_j }}, r={{ exercise.init_r }}, v={{ exercise.init_v }}</p>
     </div>
     <table class="data-table">
-      <thead><tr><th>Date</th><th>Étudiant</th><th>Code généré</th><th>Feedback</th></tr></thead>
+      <thead><tr><th>Date</th><th>Étudiant</th><th>Code généré</th><th>Feedback</th><th>Actions</th></tr></thead>
       <tbody>
       {% for s in submissions %}
-        <tr>
+        <tr id="row-{{ s.id }}">
           <td>{{ s.created_at }}</td>
           <td>{{ s.username }}</td>
           <td><pre class="mini-pre">{{ s.generated_code }}</pre></td>
-          <td>
           <td>
             {% if s.feedback.contre_exemple %}
               <span class="feedback-badge feedback-error">✗ Incorrect</span>
@@ -63,9 +62,16 @@
               <span class="feedback-badge feedback-pending">—</span>
             {% endif %}
           </td>
+          <td>
+            <button class="delete-submission-btn"
+                    data-id="{{ s.id }}"
+                    style="background:#dc3545;color:white;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:0.82em;">
+              🗑 Supprimer
+            </button>
+          </td>
         </tr>
       {% else %}
-        <tr><td colspan="4" class="muted">Aucune soumission</td></tr>
+        <tr><td colspan="5" class="muted">Aucune soumission</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -89,6 +95,24 @@ document.getElementById('deleteExerciseBtn').addEventListener('click', async () 
   } else {
     alert('Erreur : ' + (data.error || 'impossible de supprimer'));
   }
+});
+
+document.querySelectorAll('.delete-submission-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const id = btn.dataset.id;
+    if (!confirm('Supprimer ce feedback étudiant ?')) return;
+    const res = await fetch(`/api/teacher/submission/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.ok) {
+      const row = document.getElementById(`row-${id}`);
+      if (row) row.remove();
+      // Mettre à jour le compteur affiché
+      const counter = document.querySelector('.students-value');
+      if (counter) counter.textContent = Math.max(0, parseInt(counter.textContent) - 1);
+    } else {
+      alert('Erreur : ' + (data.error || 'impossible de supprimer'));
+    }
+  });
 });
 </script>
 {% endblock %}
