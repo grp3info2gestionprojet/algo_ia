@@ -182,11 +182,13 @@ function renderTree(blockList, container) {
 
     if (block.type.startsWith('if_')) {
       const isElse = block.type.endsWith('_else');
+      const bgGrad = isElse ? 'linear-gradient(180deg,#7af57aff,#7af57aff)' : 'linear-gradient(180deg,#f04343,#f04343)';
+      const borderColor = isElse ? '#7af57aff' : '#f04343';
 
       // ── Header ──
       const header = document.createElement('div');
       header.setAttribute('draggable', 'true');
-      header.style.cssText = 'background:linear-gradient(180deg,var(--green),var(--green-dark));padding:10px 14px;border-radius:12px 12px 0 0;color:white;display:flex;align-items:center;justify-content:space-between;font-weight:bold;box-shadow:inset 0 2px 0 rgba(255,255,255,.2);cursor:grab;';
+      header.style.cssText = `background:${bgGrad};padding:10px 14px;border-radius:12px 12px 0 0;color:white;display:flex;align-items:center;justify-content:space-between;font-weight:bold;box-shadow:inset 0 2px 0 rgba(255,255,255,.2);cursor:grab;`;
 
       const leftPart = document.createElement('div');
       leftPart.style.cssText = 'display:flex;align-items:center;';
@@ -211,26 +213,26 @@ function renderTree(blockList, container) {
       // ── Children (alors) ──
       const childrenDiv = document.createElement('div');
       childrenDiv.className = 'block-children';
-      childrenDiv.style.cssText = 'border-left:16px solid var(--green-dark);padding:6px 10px 6px 20px;min-height:40px;background:rgba(0,0,0,.02);';
+      childrenDiv.style.cssText = `border-left:16px solid ${borderColor};padding:6px 10px 6px 20px;min-height:40px;background:rgba(0,0,0,.02);`;
       blockDiv.appendChild(childrenDiv);
 
       // ── Sinon ──
       let childrenElseDiv = null;
       if (isElse) {
         const elseHeader = document.createElement('div');
-        elseHeader.style.cssText = 'background:linear-gradient(180deg,var(--green),var(--green-dark));padding:8px 14px;color:white;display:flex;align-items:center;font-weight:bold;border-top:1px solid rgba(255,255,255,.3);';
+        elseHeader.style.cssText = `background:${bgGrad};padding:8px 14px;color:white;display:flex;align-items:center;font-weight:bold;border-top:1px solid rgba(255,255,255,.3);`;
         elseHeader.textContent = 'sinon';
         blockDiv.appendChild(elseHeader);
 
         childrenElseDiv = document.createElement('div');
         childrenElseDiv.className = 'block-children-else';
-        childrenElseDiv.style.cssText = 'border-left:16px solid var(--green-dark);padding:6px 10px 6px 20px;min-height:40px;background:rgba(0,0,0,.02);';
+        childrenElseDiv.style.cssText = `border-left:16px solid ${borderColor};padding:6px 10px 6px 20px;min-height:40px;background:rgba(0,0,0,.02);`;
         blockDiv.appendChild(childrenElseDiv);
       }
 
       // ── Footer ──
       const footer = document.createElement('div');
-      footer.style.cssText = 'background:linear-gradient(180deg,var(--green),var(--green-dark));padding:8px 14px;border-radius:0 0 12px 12px;color:white;font-weight:bold;';
+      footer.style.cssText = `background:${bgGrad};padding:8px 14px;border-radius:0 0 12px 12px;color:white;font-weight:bold;`;
       footer.textContent = 'finsi';
       blockDiv.appendChild(footer);
 
@@ -269,7 +271,7 @@ function renderTree(blockList, container) {
       // ── Bloc simple ──
       const inner = document.createElement('div');
       inner.setAttribute('draggable', 'true');
-      inner.style.cssText = 'background:linear-gradient(180deg,var(--green),var(--green-dark));padding:10px 14px;border-radius:12px;color:white;display:flex;align-items:center;justify-content:space-between;font-weight:bold;box-shadow:inset 0 2px 0 rgba(255,255,255,.2);cursor:grab;';
+      inner.style.cssText = 'background:linear-gradient(180deg,#4fd4f2,#4fd4f2);padding:10px 14px;border-radius:12px;color:white;display:flex;align-items:center;justify-content:space-between;font-weight:bold;box-shadow:inset 0 2px 0 rgba(255,255,255,.2);cursor:grab;';
 
       const leftPart = document.createElement('div');
       leftPart.style.cssText = 'display:flex;align-items:center;';

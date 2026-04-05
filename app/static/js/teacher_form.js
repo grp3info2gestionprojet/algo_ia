@@ -4,7 +4,7 @@ const COLOR_OPTIONS = [
   { value: 'r', label: 'Rouge', className: 'red' },
   { value: 'v', label: 'Verte', className: 'green' },
 ];
-const OPERATORS = ['>=', '<=', '==', '>', '<'];
+const OPERATORS = ['>=', '<=', '=='];
 let rules = [];
 
 function colorLabel(code) {
@@ -99,10 +99,7 @@ function renderRules() {
       const idx = Number(e.target.dataset.index);
       const field = e.target.dataset.field;
       rules[idx][field] = field === 'value' ? Number(e.target.value) : e.target.value;
-      // Si le champ modifié concerne la condition, synchroniser l'état initial
-      if (field === 'condColor' || field === 'operator' || field === 'value') {
-        syncInitWithRules();
-      }
+      // Reste du code sans synchronisation automatique manquante
     });
   });
   container.querySelectorAll('[data-op]').forEach(btn => {
@@ -202,12 +199,10 @@ async function preview(publish = false) {
 document.addEventListener('DOMContentLoaded', () => {
   rules.push(createRule());
   renderRules();
-  syncInitWithRules();
 
   document.getElementById('addRuleBtn').addEventListener('click', () => {
     rules.push(createRule());
     renderRules();
-    syncInitWithRules();
   });
 
   document.getElementById('clearBtn').addEventListener('click', () => {
