@@ -88,6 +88,12 @@ class GenerateurContreExemples:
 
         return exemples_reference
 
+    #fonction pour rendre plus lisible un vecteur BJRV
+    def formatBJRV(self, state):
+            if isinstance(state, tuple) and len(state) == 4:
+                return f"(B={state[0]}, J={state[1]}, R={state[2]}, V={state[3]})"
+            return state
+
     def formater_message_contre_exemple(self, contre_exemple):
         """
         Génère un message pédagogique expliquant le contre-exemple trouvé.
@@ -119,16 +125,20 @@ class GenerateurContreExemples:
         init    = contre_exemple["etat_initial"]
         obtenu  = contre_exemple["obtenu"]
         attendu = contre_exemple["attendu"]
+        
+        init_str    = self.formatBJRV(init)
+        obtenu_str  = self.formatBJRV(obtenu)
+        attendu_str = self.formatBJRV(attendu)
 
         # Cas d'erreur d'exécution : pas de plateau final à comparer
         if obtenu == "Erreur d'exécution":
-            return (f"Contre exemple trouvé : Pour l'état initial {init} "
+            return (f"Contre exemple trouvé : Pour l'état initial {init_str} "
                     f"on a une erreur d'exécution alors que l'on souhaite "
-                    f"avoir l'état final {attendu}.")
+                    f"avoir l'état final {attendu_str}.")
 
-        message = (f"Contre exemple trouvé : Pour l'état initial {init} "
-                   f"on a l'état final {obtenu} alors que l'on souhaite "
-                   f"avoir l'état final {attendu}.")
+        message = (f"Contre exemple trouvé : Pour l'état initial {init_str} "
+                   f"on a l'état final {obtenu_str} alors que l'on souhaite "
+                   f"avoir l'état final {attendu_str}.")
 
         # Noms des cases dans l'ordre des indices (B=0, J=1, R=2, V=3)
         noms_cases = ["Bleu (B)", "Jaune (J)", "Rouge (R)", "Vert (V)"]
