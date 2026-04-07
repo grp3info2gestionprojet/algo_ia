@@ -533,6 +533,11 @@ textarea {
   overflow: hidden
 }
 
+.blocks-panel {
+  position: sticky;
+  top: 20px;
+}
+
 .panel-header {
   padding: 16px;
   font-size: 20px;
@@ -569,6 +574,14 @@ textarea {
 .block-action {
   background: linear-gradient(180deg, #4fd4f2, #4fd4f2);
 }
+
+#non-palette {
+  background: linear-gradient(180deg, #f04343, #f04343);
+}
+#oui-palette {
+  background: linear-gradient(180deg, #7af57aff, #7af57aff);
+}
+
 
 .block-close {
   background: #8bd77e;
