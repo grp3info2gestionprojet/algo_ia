@@ -253,7 +253,9 @@ textarea {
 
 .students-panel {
   display: flex;
-  justify-content: center
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
 }
 
 .students-box {
@@ -563,22 +565,15 @@ textarea {
   box-shadow: 0 2px 0 rgba(0, 0, 0, .15)
 }
 
-.block-if {
-  background: linear-gradient(180deg, #f04343, #f04343);
-}
-
-.block-if-else {
-  background: linear-gradient(180deg, #7af57aff, #7af57aff);
-}
-
 .block-action {
   background: linear-gradient(180deg, #4fd4f2, #4fd4f2);
 }
 
-#non-palette {
+.block-non-palette {
   background: linear-gradient(180deg, #f04343, #f04343);
 }
-#oui-palette {
+
+.block-oui-palette {
   background: linear-gradient(180deg, #7af57aff, #7af57aff);
 }
 

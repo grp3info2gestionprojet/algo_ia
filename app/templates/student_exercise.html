@@ -10,12 +10,20 @@
   <aside class="blocks-panel">
     <div class="panel-header">BLOC DE COMMANDES</div>
     <div id="palette">
-      <div id="non-palette" class="palette-block block-if" draggable="true" data-type="if_not_empty">si non est_vide( <span class="slot">couleur</span> ) alors</div>
-      <div id="non-palette" class="palette-block block-if-else" draggable="true" data-type="if_not_empty_else">si non est_vide( <span class="slot">couleur</span> ) alors<br>sinon</div>
-      <div id="oui-palette" class="palette-block block-if" draggable="true" data-type="if_empty">si est_vide( <span class="slot">couleur</span> ) alors</div>
-      <div id="oui-palette" class="palette-block block-if-else" draggable="true" data-type="if_empty_else">si est_vide( <span class="slot">couleur</span> ) alors<br>sinon</div>
-      <div class="palette-block block-action" draggable="true" data-type="poser">poser(→ <span class="slot">couleur</span> )</div>
-      <div class="palette-block block-action" draggable="true" data-type="retirer">retirer(→ <span class="slot">couleur</span> )</div>
+      <div class="palette-block block-non-palette" draggable="true" data-type="if_not_empty">si non est_vide(
+        <span class="slot">couleur</span> ) alors
+      </div>
+      <div class="palette-block block-non-palette" draggable="true" data-type="if_not_empty_else">si non
+        est_vide( <span class="slot">couleur</span> ) alors<br>sinon</div>
+      <div class="palette-block block-oui-palette" draggable="true" data-type="if_empty">si est_vide( <span
+          class="slot">couleur</span> ) alors</div>
+      <div class="palette-block block-oui-palette" draggable="true" data-type="if_empty_else">si est_vide(
+        <span class="slot">couleur</span> ) alors<br>sinon
+      </div>
+      <div class="palette-block block-action" draggable="true" data-type="poser">poser(→ <span
+          class="slot">couleur</span> )</div>
+      <div class="palette-block block-action" draggable="true" data-type="retirer">retirer(→ <span
+          class="slot">couleur</span> )</div>
     </div>
   </aside>
 
@@ -42,8 +50,8 @@
 <script>
   window.STUDENT_EXERCISE = {
     exerciseId: {{ exercise.id }},
-    init: {{ problem.init | tojson }},
-    title: {{ exercise.title | tojson }}
+  init: { { problem.init | tojson } },
+  title: { { exercise.title | tojson } }
   };
 </script>
 <script src="{{ url_for('static', filename='js/student_workspace.js') }}?v={{ range(1, 1000) | random }}"></script>

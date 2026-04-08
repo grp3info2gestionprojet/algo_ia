@@ -340,6 +340,7 @@ def pseudocode_to_code_ids(pseudocode: str) -> list:
       si (est_vide(couleur)) alors           →  8–11
       si (non est_vide(couleur)) alors       → 12–15
       finsi                                  → 16
+      sinon                                  → 18
       STOP ajouté automatiquement            → 17
     Les lignes non reconnues sont ignorées.
     """
@@ -358,6 +359,10 @@ def pseudocode_to_code_ids(pseudocode: str) -> list:
 
         if lc in ('finsi', 'fin_si'):
             code_ids.append(16)
+            continue
+
+        if lc in ('sinon'):
+            code_ids.append(18)
             continue
 
         matched = False
@@ -539,7 +544,9 @@ def teacher_session(exercise_id):
         except Exception:
             s['feedback'] = {}
         submissions.append(s)
-    return render_template('teacher_session.html', exercise=ex, submissions=submissions)
+    problem = json.loads(ex['problem_json'])
+    pseudocode = problem.get('pseudocode_reference', '')
+    return render_template('teacher_session.html',exercise=ex,submissions=submissions,pseudocode=pseudocode)
 
 @app.route('/api/teacher/exercise/<int:exercise_id>', methods=['DELETE'])
 @login_required('teacher')
@@ -564,6 +571,18 @@ def teacher_delete_submission(submission_id):
     db.execute('DELETE FROM submissions WHERE id=?', (submission_id,))
     db.commit()
     return jsonify({'ok': True})
+
+@app.route('/api/teacher/submissions/exercise/<int:exercise_id>', methods=['DELETE'])
+@login_required('teacher')
+def teacher_delete_all_submissions(exercise_id):
+    db = get_db()
+    
+    try:
+        db.execute('DELETE FROM submissions WHERE exercise_id=?', (exercise_id,))
+        db.commit()
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
 
 # ---------------- Student ----------------
 @app.route('/student/dashboard')

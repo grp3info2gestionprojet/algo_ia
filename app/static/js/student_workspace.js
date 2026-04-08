@@ -182,8 +182,9 @@ function renderTree(blockList, container) {
 
     if (block.type.startsWith('if_')) {
       const isElse = block.type.endsWith('_else');
-      const bgGrad = isElse ? 'linear-gradient(180deg,#7af57aff,#7af57aff)' : 'linear-gradient(180deg,#f04343,#f04343)';
-      const borderColor = isElse ? '#7af57aff' : '#f04343';
+      const isEmpty = block.type.startsWith('if_empty'); // <-- LIGNE AJOUTÉE ICI
+      const bgGrad = isEmpty ? 'linear-gradient(180deg,#7af57aff,#7af57aff)' : 'linear-gradient(180deg,#f04343,#f04343)'; // <-- MODIFIÉ ICI
+      const borderColor = isEmpty ? '#7af57aff' : '#f04343'; // <-- MODIFIÉ ICI
 
       // ── Header ──
       const header = document.createElement('div');
