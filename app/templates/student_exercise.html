@@ -50,8 +50,8 @@
 <script>
   window.STUDENT_EXERCISE = {
     exerciseId: {{ exercise.id }},
-  init: { { problem.init | tojson } },
-  title: { { exercise.title | tojson } }
+    init: {{ problem.init | tojson }},
+    title: {{ exercise.title | tojson }}
   };
 </script>
 <script src="{{ url_for('static', filename='js/student_workspace.js') }}?v={{ range(1, 1000) | random }}"></script>
